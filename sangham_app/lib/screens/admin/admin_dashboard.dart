@@ -198,6 +198,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         },
                       ),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _QuickActionButton(
+                        icon: Icons.account_balance,
+                        label: 'Loans',
+                        color: const Color(0xFFF57C00),
+                        onTap: () {
+                          // Navigate to loans tab
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),

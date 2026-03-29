@@ -4,6 +4,7 @@ import '../../providers/auth_provider.dart';
 import 'user_dashboard.dart';
 import 'passbook_screen.dart';
 import 'attendance_calendar.dart';
+import 'loan_screen.dart';
 import '../auth/login_screen.dart';
 
 class UserShell extends StatefulWidget {
@@ -25,6 +26,7 @@ class _UserShellState extends State<UserShell> {
       UserDashboardScreen(userId: userId),
       PassbookScreen(userId: userId),
       AttendanceCalendarScreen(userId: userId),
+      LoanScreen(userId: userId),
     ];
 
     return Scaffold(
@@ -71,6 +73,10 @@ class _UserShellState extends State<UserShell> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.calendar_today_rounded),
                 label: 'Attendance',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.account_balance_rounded),
+                label: 'Loans',
               ),
             ],
           ),

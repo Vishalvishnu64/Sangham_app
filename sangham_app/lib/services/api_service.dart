@@ -192,4 +192,47 @@ class ApiService {
     );
     return jsonDecode(response.body);
   }
+
+  // ─── LOANS ──────────────────────────────────────────
+  static Future<Map<String, dynamic>> issueLoan(
+      String userId, double amount, String note) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/loans'),
+      headers: await _headers(),
+      body: jsonEncode({
+        'userId': userId,
+        'amount': amount,
+        'note': note,
+      }),
+    );
+    return jsonDecode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> getAllLoans({String? status}) async {
+    String url = '$baseUrl/loans';
+    if (status != null) url += '?status=$status';
+    final response = await http.get(
+      Uri.parse(url),
+      headers: await _headers(),
+    );
+    return jsonDecode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> getUserLoans(String userId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/loans/user/$userId'),
+      headers: await _headers(),
+    );
+    return jsonDecode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> repayLoan(
+      String loanId, double amount) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/loans/$loanId/repay'),
+      headers: await _headers(),
+      body: jsonEncode({'amount': amount}),
+    );
+    return jsonDecode(response.body);
+  }
 }

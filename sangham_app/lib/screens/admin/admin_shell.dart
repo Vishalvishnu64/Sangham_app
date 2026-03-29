@@ -5,6 +5,7 @@ import 'admin_dashboard.dart';
 import 'members_screen.dart';
 import 'attendance_manager.dart';
 import 'history_screen.dart';
+import 'loan_management_screen.dart';
 import '../auth/login_screen.dart';
 
 class AdminShell extends StatefulWidget {
@@ -22,6 +23,7 @@ class _AdminShellState extends State<AdminShell> {
     MembersScreen(),
     AttendanceManager(),
     HistoryScreen(),
+    LoanManagementScreen(),
   ];
 
   @override
@@ -74,6 +76,10 @@ class _AdminShellState extends State<AdminShell> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.history_rounded),
                 label: 'History',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.account_balance_rounded),
+                label: 'Loans',
               ),
             ],
           ),

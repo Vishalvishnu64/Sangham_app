@@ -2,6 +2,7 @@ const express = require('express');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Attendance = require('../models/Attendance');
+const Loan = require('../models/Loan');
 const { auth, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
@@ -62,6 +63,14 @@ router.get('/admin', auth, adminOnly, async (req, res) => {
       .sort({ date: -1 })
       .limit(10);
 
+    // Total loans outstanding
+    const loansOutstandingResult = await Loan.aggregate([
+      { $match: { status: 'active' } },
+      { $group: { _id: null, total: { $sum: '$outstandingBalance' } } }
+    ]);
+    const totalLoansOutstanding = loansOutstandingResult[0]?.total || 0;
+    const activeLoansCount = await Loan.countDocuments({ status: 'active' });
+
     res.json({
       totalFund,
       totalMembers,
@@ -70,7 +79,9 @@ router.get('/admin', auth, adminOnly, async (req, res) => {
       presentToday,
       paidThisWeek: paidThisWeek.length,
       notPaidThisWeek: totalMembers - paidThisWeek.length,
-      recentTransactions
+      recentTransactions,
+      totalLoansOutstanding,
+      activeLoansCount
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -114,6 +125,14 @@ router.get('/user/:id', auth, async (req, res) => {
     const totalPresent = attendanceRecords.filter(r => r.status === 'present').length;
     const totalAttendance = attendanceRecords.length;
 
+    // Loan balance
+    const loanResult = await Loan.aggregate([
+      { $match: { userId: user._id, status: 'active' } },
+      { $group: { _id: null, total: { $sum: '$outstandingBalance' } } }
+    ]);
+    const loanBalance = loanResult[0]?.total || 0;
+    const activeLoans = await Loan.countDocuments({ userId: user._id, status: 'active' });
+
     res.json({
       user: {
         id: user._id,
@@ -128,7 +147,9 @@ router.get('/user/:id', auth, async (req, res) => {
         totalAbsent: totalAttendance - totalPresent,
         total: totalAttendance,
         consistency: totalAttendance > 0 ? Math.round((totalPresent / totalAttendance) * 100) : 0
-      }
+      },
+      loanBalance,
+      activeLoans
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });

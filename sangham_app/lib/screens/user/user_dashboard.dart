@@ -189,6 +189,16 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                           : '${_data?['attendance']?['consistency'] ?? 0}%',
                       color: const Color(0xFFF5A623),
                     ),
+                    if (!_isLoading && (_data?['loanBalance'] ?? 0) > 0) ...[
+                      const SizedBox(height: 12),
+                      _SummaryRow(
+                        icon: Icons.account_balance,
+                        label: 'Loan Balance',
+                        value: _currencyFormat
+                            .format(_data?['loanBalance'] ?? 0),
+                        color: Colors.orange,
+                      ),
+                    ],
                   ],
                 ),
               ),
