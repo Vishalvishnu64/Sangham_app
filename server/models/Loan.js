@@ -11,13 +11,47 @@ const loanSchema = new mongoose.Schema({
     required: [true, 'Loan amount is required'],
     min: [1, 'Loan amount must be positive']
   },
+  principalAmount: {
+    type: Number,
+    required: true
+  },
+  remainingPrincipal: {
+    type: Number,
+    required: true
+  },
   outstandingBalance: {
     type: Number,
     required: true
   },
+  interestRate: {
+    type: Number,
+    default: 0.01 // 1% per month (100 per 10,000)
+  },
+  currentMonthInterest: {
+    type: Number,
+    default: 0
+  },
+  totalInterestPaid: {
+    type: Number,
+    default: 0
+  },
+  interestCalculatedDate: {
+    type: Date,
+    default: null
+  },
+  repayments: [{
+    date: {
+      type: Date,
+      default: Date.now
+    },
+    principalPaid: Number,
+    interestPaid: Number,
+    totalPaid: Number,
+    remainingBalance: Number
+  }],
   status: {
     type: String,
-    enum: ['active', 'repaid'],
+    enum: ['active', 'repaid', 'overdue'],
     default: 'active'
   },
   note: {

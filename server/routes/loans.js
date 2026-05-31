@@ -3,6 +3,13 @@ const Loan = require('../models/Loan');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { auth, adminOnly } = require('../middleware/auth');
+const {
+  calculateMonthlyInterest,
+  getTotalAmountDue,
+  processRepayment,
+  accrueMonthlyInterest,
+  getLoanDetails
+} = require('../utils/loanInterest');
 
 const router = express.Router();
 
@@ -21,10 +28,18 @@ router.post('/', auth, adminOnly, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // Calculate initial monthly interest
+    const initialInterest = calculateMonthlyInterest(amount);
+
     const loan = new Loan({
       userId,
       amount,
-      outstandingBalance: amount,
+      principalAmount: amount,
+      remainingPrincipal: amount,
+      outstandingBalance: amount + initialInterest,
+      currentMonthInterest: initialInterest,
+      interestRate: 0.01,
+      interestCalculatedDate: new Date(),
       note: note || '',
       issuedDate: new Date(),
       createdBy: req.user._id
@@ -65,16 +80,20 @@ router.get('/', auth, adminOnly, async (req, res) => {
       .sort({ createdAt: -1 });
 
     // Calculate summary
-    const totalLoaned = loans.reduce((sum, l) => sum + l.amount, 0);
+    const totalLoaned = loans.reduce((sum, l) => sum + l.principalAmount, 0);
     const totalOutstanding = loans
       .filter(l => l.status === 'active')
       .reduce((sum, l) => sum + l.outstandingBalance, 0);
+    const totalInterestDue = loans
+      .filter(l => l.status === 'active')
+      .reduce((sum, l) => sum + l.currentMonthInterest, 0);
 
     res.json({
       loans,
       summary: {
         totalLoaned,
         totalOutstanding,
+        totalInterestDue,
         activeCount: loans.filter(l => l.status === 'active').length,
         repaidCount: loans.filter(l => l.status === 'repaid').length
       }
@@ -116,7 +135,7 @@ router.get('/user/:userId', auth, async (req, res) => {
   }
 });
 
-// POST /api/loans/:id/repay - Record a repayment (admin only)
+// POST /api/loans/:id/repay - Record a repayment with interest deduction
 router.post('/:id/repay', auth, adminOnly, async (req, res) => {
   try {
     const { amount } = req.body;
@@ -134,40 +153,129 @@ router.post('/:id/repay', auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: 'Loan is already fully repaid' });
     }
 
-    if (amount > loan.outstandingBalance) {
+    const totalDue = loan.remainingPrincipal + loan.currentMonthInterest;
+    if (amount > totalDue) {
       return res.status(400).json({
-        message: `Repayment amount (₹${amount}) exceeds outstanding balance (₹${loan.outstandingBalance})`
+        message: `Repayment amount (₹${amount}) exceeds total due (₹${totalDue})`,
+        totalDue,
+        remainingPrincipal: loan.remainingPrincipal,
+        interestDue: loan.currentMonthInterest
       });
     }
 
-    // Update loan balance
-    loan.outstandingBalance -= amount;
-    if (loan.outstandingBalance === 0) {
-      loan.status = 'repaid';
-      loan.repaidDate = new Date();
-    }
-    await loan.save();
+    // Process the repayment with interest calculation
+    const { loan: updatedLoan, repaymentSummary } = processRepayment(loan, amount);
+    
+    // Save updated loan
+    await updatedLoan.save();
 
     // Create a repayment transaction
     const transaction = new Transaction({
       userId: loan.userId,
-      amount: amount, // Positive because money is coming back
+      amount: amount,
       type: 'loan_repayment',
-      note: `Loan repayment: ₹${amount}`,
+      note: `Loan repayment - Principal: ₹${repaymentSummary.principalPaid}, Interest: ₹${repaymentSummary.interestPaid}`,
       date: new Date(),
       createdBy: req.user._id
     });
     await transaction.save();
 
-    const populated = await Loan.findById(loan._id)
+    const populated = await Loan.findById(updatedLoan._id)
       .populate('userId', 'name phone')
       .populate('createdBy', 'name');
 
     res.json({
-      message: loan.status === 'repaid'
+      message: updatedLoan.status === 'repaid'
         ? 'Loan fully repaid!'
-        : `Repayment of ₹${amount} recorded. Outstanding: ₹${loan.outstandingBalance}`,
-      loan: populated
+        : `Repayment recorded successfully`,
+      loan: populated,
+      repaymentSummary
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// GET /api/loans/:id/details - Get detailed loan info with interest
+router.get('/:id/details', auth, async (req, res) => {
+  try {
+    const loan = await Loan.findById(req.params.id)
+      .populate('userId', 'name phone')
+      .populate('createdBy', 'name');
+
+    if (!loan) {
+      return res.status(404).json({ message: 'Loan not found' });
+    }
+
+    // Users can only view their own loans
+    if (req.user.role !== 'admin' && req.user._id.toString() !== loan.userId._id.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const details = getLoanDetails(loan);
+    res.json(details);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// POST /api/loans/:id/calculate-interest - Manually calculate interest for a loan
+router.post('/:id/calculate-interest', auth, adminOnly, async (req, res) => {
+  try {
+    const loan = await Loan.findById(req.params.id);
+    if (!loan) {
+      return res.status(404).json({ message: 'Loan not found' });
+    }
+
+    if (loan.status === 'repaid' || loan.remainingPrincipal <= 0) {
+      return res.status(400).json({ message: 'Cannot calculate interest for fully repaid loan' });
+    }
+
+    const oldInterest = loan.currentMonthInterest;
+    const newInterest = calculateMonthlyInterest(loan.remainingPrincipal);
+    
+    loan.currentMonthInterest = newInterest;
+    loan.outstandingBalance = loan.remainingPrincipal + newInterest;
+    loan.interestCalculatedDate = new Date();
+    
+    await loan.save();
+
+    res.json({
+      message: 'Interest calculated',
+      previousMonthInterest: oldInterest,
+      currentMonthInterest: newInterest,
+      remainingPrincipal: loan.remainingPrincipal,
+      totalOutstanding: loan.outstandingBalance
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// POST /api/admin/loans/calculate-all-interests - Batch calculate interest for all active loans
+router.post('/admin/calculate-all-interests', auth, adminOnly, async (req, res) => {
+  try {
+    const activeLoans = await Loan.find({ status: 'active', remainingPrincipal: { $gt: 0 } });
+    
+    let totalInterestAccrued = 0;
+    let processedCount = 0;
+
+    for (let loan of activeLoans) {
+      const newInterest = calculateMonthlyInterest(loan.remainingPrincipal);
+      loan.currentMonthInterest = newInterest;
+      loan.outstandingBalance = loan.remainingPrincipal + newInterest;
+      loan.interestCalculatedDate = new Date();
+      
+      await loan.save();
+      totalInterestAccrued += newInterest;
+      processedCount++;
+    }
+
+    res.json({
+      message: `Interest calculated for ${processedCount} loans`,
+      processedCount,
+      totalInterestAccrued,
+      timestamp: new Date()
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
