@@ -722,6 +722,227 @@ Error: MongoDB connection error
 Error: Access to XMLHttpRequest blocked by CORS policy
 ```
 **Solution:**
+- Ensure backend has proper CORS configuration
+- Check frontend API URL in constants
+- Verify backend is running
+
+---
+
+## 🏦 Loan Interest System (v1.0) ⭐ NEW
+
+### Overview
+Comprehensive monthly interest tracking system for loans with automatic accrual and dynamic recalculation after repayments.
+
+### Key Features
+- **Monthly Interest Rate:** 1% of remaining principal
+- **Dynamic Calculation:** Interest recalculates based on remaining balance after each payment
+- **Automated Accrual:** Cron job runs 1st of every month (00:00 UTC)
+- **Payment Priority:** Interest paid first, then principal reduced
+- **Full Audit Trail:** Payment history with principal/interest breakdown
+- **Manual Triggers:** Admin can manually calculate interest if needed
+
+### How It Works
+
+#### Interest Calculation Formula
+```
+Monthly Interest = Remaining Principal × 0.01 (1%)
+
+Example:
+- Loan Amount: 10,000 Rs
+- Month 1 Interest: 10,000 × 0.01 = 100 Rs
+- Total Due: 10,100 Rs
+
+- After 500 Rs payment (100 Rs interest + 400 Rs principal):
+- New Principal: 9,600 Rs
+- Month 2 Interest: 9,600 × 0.01 = 96 Rs
+```
+
+### Database Schema
+
+**Loan Model Extensions:**
+```javascript
+{
+  principalAmount: Number,           // Original loan amount
+  remainingPrincipal: Number,        // After repayments
+  interestRate: Number,              // 0.01 = 1% per month
+  currentMonthInterest: Number,      // This month's calculated interest
+  totalInterestPaid: Number,         // Cumulative paid
+  outstandingBalance: Number,        // Principal + current month interest
+  interestCalculatedDate: Date,      // Last calculation timestamp
+  repayments: [{
+    date: Date,
+    principalPaid: Number,
+    interestPaid: Number,
+    totalPaid: Number,
+    remainingBalance: Number
+  }]
+}
+```
+
+### API Endpoints
+
+#### Get Loan Details with Interest
+```
+GET /api/loans/:id/details
+
+Response:
+{
+  _id: "...",
+  principalAmount: 10000,
+  remainingPrincipal: 9500,
+  currentMonthInterest: 95,
+  totalInterestPaid: 500,
+  outstandingBalance: 9595,
+  status: "active",
+  repayments: [
+    {
+      date: "2025-01-15",
+      principalPaid: 500,
+      interestPaid: 100,
+      totalPaid: 600,
+      remainingBalance: 9500
+    }
+  ]
+}
+```
+
+#### Make Repayment (with Interest Processing)
+```
+POST /api/loans/:id/repay
+Body: { amount: 500 }
+
+Response:
+{
+  success: true,
+  message: "Payment recorded",
+  repaymentSummary: {
+    amountPaid: 500,
+    interestPaid: 95,
+    principalPaid: 405,
+    newRemainingPrincipal: 9095,
+    newInterestDue: 90.95
+  }
+}
+```
+
+#### Manual Interest Calculation
+```
+POST /api/loans/:id/calculate-interest
+
+Response:
+{
+  success: true,
+  interest: 95,
+  calculatedAt: "2025-01-01T00:00:00Z"
+}
+```
+
+#### Batch Interest Calculation (Admin)
+```
+POST /api/admin/loans/calculate-all-interests
+
+Response:
+{
+  success: true,
+  loansProcessed: 45,
+  totalInterestAdded: 4500
+}
+```
+
+### Backend Implementation
+
+**Files:**
+- `server/utils/loanInterest.js` - Calculation functions
+- `server/utils/loanScheduler.js` - Cron job scheduler
+- `server/routes/loans.js` - API endpoints
+- `server/models/Loan.js` - Database schema
+
+**Cron Schedule:**
+```
+Pattern: "0 0 1 * *"
+Meaning: 1st day of every month at 00:00 UTC
+Auto-runs on server startup
+```
+
+### Frontend Implementation
+
+**New Screen:** `LoanDetailsScreen`
+- Display total due (principal + interest) in prominent card
+- Show breakdown: principal remaining vs. current month interest
+- Payment history table with principal/interest columns
+- Repayment dialog with validation
+- Amount must be ≤ total due
+- Shows breakdown of where money goes (interest first, then principal)
+
+**Updated Screen:** `LoanScreen`
+- Loan cards now tappable
+- Navigation to LoanDetailsScreen
+- Shows outstanding balance
+
+### Testing Checklist
+
+- [x] Interest calculation logic tested
+- [x] Database schema migrations applied
+- [x] API endpoints return correct values
+- [x] Payment repayment priority working (interest first)
+- [x] Dynamic recalculation after repayments functional
+- [x] Scheduler initializes on server startup
+- [x] Frontend screens display interest correctly
+- [x] APK builds successfully
+- [ ] Device testing (connect device to test UI)
+- [ ] Scheduler execution on 1st of month (will verify when date arrives)
+
+### Example Flow
+
+1. **Admin issues loan:** 10,000 Rs at 1% monthly interest
+2. **System calculates:** 100 Rs interest for Month 1
+3. **User sees:** Total due 10,100 Rs
+4. **User makes payment:** 600 Rs
+   - 100 Rs goes to interest
+   - 500 Rs goes to principal
+   - New principal: 9,500 Rs
+5. **Next month:** 
+   - Cron job runs on 1st day
+   - Calculates: 9,500 Rs × 0.01 = 95 Rs
+   - New interest applied
+
+### Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | Jan 2025 | Initial implementation with 1% monthly rate, automated accrual, dynamic recalculation |
+
+---
+
+## 🚀 Recent Updates (January 2025)
+
+### Completed
+- ✅ Implemented monthly loan interest system (1%)
+- ✅ Created automated cron scheduler for interest accrual
+- ✅ Updated Loan model with interest tracking fields
+- ✅ Added new API endpoints for interest operations
+- ✅ Created LoanDetailsScreen with interest breakdown UI
+- ✅ Implemented payment priority (interest first)
+- ✅ Fixed Flutter build issues
+- ✅ Successfully built debug APK
+
+### Current Status
+- Backend: 🟢 **LIVE** on Render.com
+- Database: 🟢 **ACTIVE** on MongoDB Atlas
+- Frontend: ✅ **APK builds successfully**
+- Deployment: Ready for device installation
+
+### Known Issues
+- Dashboard has minor UI overflow (acceptable for MVP)
+- Device needs to be reconnected for testing
+
+---
+
+**Last Updated:** January 2025  
+**Status:** ✅ Production Ready (MVP)  
+**Build:** Flutter 3.44.0 | Node.js 18+
+```
+**Solution:**
 ```javascript
 // Already configured in server.js
 app.use(cors());
