@@ -267,10 +267,10 @@ class _LoanScreenState extends State<LoanScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
                 children: [
                   Icon(
                     isActive ? Icons.account_balance : Icons.check_circle,
@@ -307,73 +307,74 @@ class _LoanScreenState extends State<LoanScreen> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-              const SizedBox(width: 6),
-              Text(
-                'Issued: ${DateFormat('dd MMM yyyy').format(loan.issuedDate)}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-          if (loan.note.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              loan.note,
-              style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                  fontStyle: FontStyle.italic),
             ),
-          ],
-          if (isActive) ...[
-            const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Remaining to repay',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                Text(
-                  _currencyFormat.format(loan.outstandingBalance),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: Colors.grey.shade200,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
-                minHeight: 6,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${(progress * 100).toInt()}% repaid',
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
-            ),
-          ],
-          if (!isActive && loan.repaidDate != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.check_circle, size: 14, color: Color(0xFF4CAF50)),
+                const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
                 const SizedBox(width: 6),
                 Text(
-                  'Repaid on ${DateFormat('dd MMM yyyy').format(loan.repaidDate!)}',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF4CAF50)),
+                  'Issued: ${DateFormat('dd MMM yyyy').format(loan.issuedDate)}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
             ),
+            if (loan.note.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                loan.note,
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic),
+              ),
+            ],
+            if (isActive) ...[
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Remaining to repay',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(
+                    _currencyFormat.format(loan.outstandingBalance),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+                  minHeight: 6,
+                ),
+              ),
+              const SizedBox(height: 4),
+                Text(
+                '${(progress * 100).toInt()}% repaid',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+            if (!isActive && loan.repaidDate != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, size: 14, color: Color(0xFF4CAF50)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Repaid on ${DateFormat('dd MMM yyyy').format(loan.repaidDate!)}',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF4CAF50)),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

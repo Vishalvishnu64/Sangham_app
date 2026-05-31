@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
+import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
-import '../../utils/constants.dart';
 
 class LoanDetailsScreen extends StatefulWidget {
   final String loanId;
-
-  const LoanDetailsScreen({Key? key, required this.loanId}) : super(key: key);
+  const LoanDetailsScreen({super.key, required this.loanId});
 
   @override
   State<LoanDetailsScreen> createState() => _LoanDetailsScreenState();
@@ -15,6 +12,8 @@ class LoanDetailsScreen extends StatefulWidget {
 
 class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
   late Future<Map<String, dynamic>> _loanDetailsFuture;
+  Map<String, dynamic>? _currentLoan;
+  final _currencyFormat = NumberFormat('₹#,##0.00', 'en_IN');
 
   @override
   void initState() {
@@ -23,7 +22,11 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
   }
 
   void _showRepaymentDialog() {
-    final repaymentController = TextEditingController();
+    if (_currentLoan == null) return;
+
+    final controller = TextEditingController();
+    final totalDue = ((_currentLoan!['remainingPrincipal'] as num?)?.toDouble() ?? 0) +
+        ((_currentLoan!['currentMonthInterest'] as num?)?.toDouble() ?? 0);
 
     showDialog(
       context: context,
@@ -33,13 +36,16 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Enter repayment amount (₹):'),
-            const SizedBox(height: 12),
+            Text(
+              'Total Due: ${_currencyFormat.format(totalDue)}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
             TextField(
-              controller: repaymentController,
+              controller: controller,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                hintText: 'Amount in Rupees',
+                hintText: 'Enter amount to pay',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -55,31 +61,49 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              if (repaymentController.text.isEmpty) {
+              final amount = double.tryParse(controller.text);
+              if (amount == null || amount <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter amount')),
+                  const SnackBar(content: Text('Enter valid amount')),
                 );
                 return;
               }
 
-              final amount = double.parse(repaymentController.text);
-              Navigator.pop(context);
+              if (amount > totalDue) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Amount exceeds total due (${_currencyFormat.format(totalDue)})')),
+                );
+                return;
+              }
 
               try {
-                await ApiService.repayLoan(widget.loanId, amount);
-                setState(() {
-                  _loanDetailsFuture = ApiService.getLoanDetails(widget.loanId);
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Repayment recorded successfully')),
+                final result = await ApiService.repayLoan(
+                  widget.loanId,
+                  amount,
                 );
+
+                if (!mounted) return;
+
+                if (result['success'] == true) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Payment recorded successfully')),
+                  );
+                  Navigator.pop(context);
+                  setState(() {
+                    _loanDetailsFuture = ApiService.getLoanDetails(widget.loanId);
+                  });
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(result['message'] ?? 'Payment failed')),
+                  );
+                }
               } catch (e) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Error: $e')),
                 );
               }
             },
-            child: const Text('Repay'),
+            child: const Text('Pay Now'),
           ),
         ],
       ),
@@ -92,6 +116,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
       appBar: AppBar(
         title: const Text('Loan Details'),
         backgroundColor: const Color(0xFF1A5C3A),
+        foregroundColor: Colors.white,
       ),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _loanDetailsFuture,
@@ -102,7 +127,23 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
 
           if (snapshot.hasError) {
             return Center(
-              child: Text('Error: ${snapshot.error}'),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('Error: ${snapshot.error}'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _loanDetailsFuture = ApiService.getLoanDetails(widget.loanId);
+                      });
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
             );
           }
 
@@ -111,531 +152,244 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
           }
 
           final loan = snapshot.data!;
-          final principalRemaining = (loan['remainingPrincipal'] as num?)?.toDouble() ?? 0;
-          final interestDue = (loan['currentMonthInterest'] as num?)?.toDouble() ?? 0;
-          final totalDue = principalRemaining + interestDue;
-          final totalInterestPaid = (loan['totalInterestPaid'] as num?)?.toDouble() ?? 0;
+          _currentLoan = loan;
+
+          final remainingPrincipal = (loan['remainingPrincipal'] as num?)?.toDouble() ?? 0;
+          final currentMonthInterest = (loan['currentMonthInterest'] as num?)?.toDouble() ?? 0;
+          final totalDue = remainingPrincipal + currentMonthInterest;
+          final repayments = (loan['repayments'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+          final status = (loan['status'] as String?)?.toUpperCase() ?? 'ACTIVE';
 
           return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Amount Summary Card
-                Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A5C3A),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Total Amount Due',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '₹${totalDue.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Principal',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '₹${principalRemaining.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Interest (This Month)',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '₹${interestDue.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                // Total Due Card
+                Card(
+                  elevation: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF1A5C3A),
+                          const Color(0xFF2D7F52),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-
-                // Loan Information Section
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Loan Information',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoRow('Original Loan Amount', '₹${(loan['principalAmount'] as num?)?.toStringAsFixed(0) ?? 0}'),
-                      _buildInfoRow('Interest Rate', '1% per month'),
-                      _buildInfoRow('Status', (loan['status'] as String?)?.toUpperCase() ?? 'N/A'),
-                      _buildInfoRow(
-                        'Issued Date',
-                        loan['issuedDate'] != null
-                            ? DateTime.parse(loan['issuedDate'].toString()).toString().split(' ')[0]
-                            : 'N/A',
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Interest Tracking Section
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Interest Tracking',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoRow('Total Interest Paid', '₹${totalInterestPaid.toStringAsFixed(2)}'),
-                      _buildInfoRow(
-                        'Last Interest Calculated',
-                        loan['lastInterestCalculated'] != null
-                            ? DateTime.parse(loan['lastInterestCalculated'].toString()).toString().split(' ')[0]
-                            : 'N/A',
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Payment History Section
-                if (loan['repaymentHistory'] != null && (loan['repaymentHistory'] as List).isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Payment History',
-                          style: TextStyle(
-                            fontSize: 18,
+                          'Total Amount Due',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _currencyFormat.format(totalDue),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 12),
-                        ...(loan['repaymentHistory'] as List).map((repayment) {
-                          final date = DateTime.parse(repayment['date'].toString()).toString().split(' ')[0];
-                          final principal = repayment['principalPaid'] ?? 0;
-                          final interest = repayment['interestPaid'] ?? 0;
-                          final total = repayment['totalPaid'] ?? 0;
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Column(
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Date: $date',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      '₹${total}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF1A5C3A),
-                                      ),
-                                    ),
-                                  ],
+                                const Text(
+                                  'Principal',
+                                  style: TextStyle(color: Colors.white70, fontSize: 12),
                                 ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Principal: ₹${principal}'),
-                                    Text('Interest: ₹${interest}'),
-                                  ],
+                                Text(
+                                  _currencyFormat.format(remainingPrincipal),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ],
                             ),
-                          );
-                        }).toList(),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Interest (This Month)',
+                                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                                ),
+                                Text(
+                                  _currencyFormat.format(currentMonthInterest),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
+                ),
+                const SizedBox(height: 24),
 
-                const SizedBox(height: 20),
+                // Loan Information
+                const Text(
+                  'Loan Information',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow('Original Amount', _currencyFormat.format(loan['principalAmount'] ?? 0)),
+                _buildInfoRow('Status', status, statusColor: status == 'REPAID' ? Colors.green : Colors.orange),
+                _buildInfoRow('Interest Rate', '1% per month'),
+                _buildInfoRow(
+                  'Issued Date',
+                  DateFormat('dd MMM yyyy').format(
+                    DateTime.parse(loan['createdAt'] as String? ?? DateTime.now().toString()),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Interest Tracking
+                const Text(
+                  'Interest Tracking',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow('Total Interest Paid', _currencyFormat.format(loan['totalInterestPaid'] ?? 0)),
+                _buildInfoRow(
+                  'Last Calculated',
+                  DateFormat('dd MMM yyyy').format(
+                    DateTime.parse(loan['interestCalculatedDate'] as String? ?? DateTime.now().toString()),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Payment History
+                const Text(
+                  'Payment History',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                if (repayments.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'No payments made yet',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  )
+                else
+                  ...repayments.map((payment) {
+                    final date = DateTime.parse(payment['date'] as String? ?? DateTime.now().toString());
+                    final principal = (payment['principalPaid'] as num?)?.toDouble() ?? 0;
+                    final interest = (payment['interestPaid'] as num?)?.toDouble() ?? 0;
+                    final total = (payment['totalPaid'] as num?)?.toDouble() ?? 0;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                DateFormat('dd MMM yyyy').format(date),
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                _currencyFormat.format(total),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF4CAF50),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Principal: ${_currencyFormat.format(principal)}',
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              ),
+                              Text(
+                                'Interest: ${_currencyFormat.format(interest)}',
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
               ],
             ),
           );
         },
       ),
-      floatingActionButton: (loan['status'] as String?)?.toLowerCase() != 'repaid'
-          ? FloatingActionButton.extended(
-              onPressed: _showRepaymentDialog,
+      floatingActionButton: (_currentLoan?['status'] as String?)?.toLowerCase() != 'repaid'
+          ? FloatingActionButton(
               backgroundColor: const Color(0xFF1A5C3A),
-              label: const Text('Make Repayment'),
-              icon: const Icon(Icons.payment),
+              foregroundColor: Colors.white,
+              onPressed: _showRepaymentDialog,
+              child: const Icon(Icons.add),
             )
           : null,
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+  Widget _buildInfoRow(String label, String value, {Color? statusColor}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.grey,
-              fontSize: 14,
-            ),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Loan Details'),
-        backgroundColor: const Color(0xFF1A5C3A),
-      ),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _loanDetailsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          }
-
-          if (!snapshot.hasData) {
-            return const Center(child: Text('No data available'));
-          }
-
-          final loan = snapshot.data!;
-          final principalRemaining = loan['remainingPrincipal'] ?? 0;
-          final interestDue = loan['currentMonthInterest'] ?? 0;
-          final totalDue = principalRemaining + interestDue;
-          final totalInterestPaid = loan['totalInterestPaid'] ?? 0;
-
-          return SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Amount Summary Card
-                Container(
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(20),
+          statusColor != null
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1A5C3A),
-                    borderRadius: BorderRadius.circular(16),
+                    color: statusColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Total Amount Due',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '₹${totalDue.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Principal',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '₹${principalRemaining.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Interest (This Month)',
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '₹${interestDue.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Loan Information Section
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Loan Information',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoRow('Original Loan Amount', '₹${loan['principalAmount'] ?? 0}'),
-                      _buildInfoRow('Interest Rate', '${(loan['interestRate'] as double?)?.toStringAsFixed(1) ?? 0}% per month'),
-                      _buildInfoRow('Status', loan['status']?.toUpperCase() ?? 'N/A'),
-                      _buildInfoRow(
-                        'Issued Date',
-                        loan['issuedDate'] != null
-                            ? DateTime.parse(loan['issuedDate']).toString().split(' ')[0]
-                            : 'N/A',
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Interest Tracking Section
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Interest Tracking',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoRow('Total Interest Paid', '₹${totalInterestPaid.toStringAsFixed(2)}'),
-                      _buildInfoRow(
-                        'Last Interest Calculated',
-                        loan['lastInterestCalculated'] != null
-                            ? DateTime.parse(loan['lastInterestCalculated']).toString().split(' ')[0]
-                            : 'N/A',
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Payment History Section
-                if (loan['repaymentHistory'] != null && (loan['repaymentHistory'] as List).isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Payment History',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        ...(loan['repaymentHistory'] as List).map((repayment) {
-                          final date = DateTime.parse(repayment['date']).toString().split(' ')[0];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Date: $date',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      '₹${repayment['totalPaid']}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF1A5C3A),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('Principal: ₹${repayment['principalPaid']}'),
-                                    Text('Interest: ₹${repayment['interestPaid']}'),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ],
+                  child: Text(
+                    value,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: statusColor,
                     ),
                   ),
-
-                const SizedBox(height: 20),
-              ],
-            ),
-          );
-        },
-      ),
-      floatingActionButton: loan['status'] != 'repaid'
-          ? FloatingActionButton.extended(
-              onPressed: _showRepaymentDialog,
-              backgroundColor: const Color(0xFF1A5C3A),
-              label: const Text('Make Repayment'),
-              icon: const Icon(Icons.payment),
-            )
-          : null,
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.grey,
-              fontSize: 14,
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
+                )
+              : Text(
+                  value,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
         ],
       ),
     );
