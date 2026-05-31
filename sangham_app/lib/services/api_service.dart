@@ -235,4 +235,21 @@ class ApiService {
     );
     return jsonDecode(response.body);
   }
+
+  static Future<Map<String, dynamic>> getLoanDetails(String loanId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/loans/$loanId/details'),
+      headers: await _headers(),
+    );
+    return jsonDecode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> calculateInterest(String loanId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/loans/$loanId/calculate-interest'),
+      headers: await _headers(),
+      body: jsonEncode({}),
+    );
+    return jsonDecode(response.body);
+  }
 }
