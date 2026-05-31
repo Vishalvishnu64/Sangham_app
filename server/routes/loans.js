@@ -136,7 +136,7 @@ router.get('/user/:userId', auth, async (req, res) => {
 });
 
 // POST /api/loans/:id/repay - Record a repayment with interest deduction
-router.post('/:id/repay', auth, adminOnly, async (req, res) => {
+router.post('/:id/repay', auth, async (req, res) => {
   try {
     const { amount } = req.body;
 
@@ -147,6 +147,11 @@ router.post('/:id/repay', auth, adminOnly, async (req, res) => {
     const loan = await Loan.findById(req.params.id);
     if (!loan) {
       return res.status(404).json({ message: 'Loan not found' });
+    }
+
+    // Check permission: users can only repay their own loans, admins can repay any loan
+    if (req.user.role !== 'admin' && req.user._id.toString() !== loan.userId.toString()) {
+      return res.status(403).json({ message: 'You can only repay your own loans' });
     }
 
     if (loan.status === 'repaid') {
