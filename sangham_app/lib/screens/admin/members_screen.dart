@@ -473,6 +473,10 @@ class _MembersScreenState extends State<MembersScreen> {
                             ],
                           ),
                           child: ListTile(
+                            tileColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                             contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 6),
                             leading: CircleAvatar(

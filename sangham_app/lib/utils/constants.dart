@@ -1,6 +1,8 @@
 class AppConstants {
-  // Change this to your server IP
-  static const String baseUrl = 'http://localhost:5000/api';
+  // Production API URL
+  static const String baseUrl = 'https://sangham-server.onrender.com/api';
+  // For local development, uncomment and use:
+  // static const String baseUrl = 'http://192.168.1.5:5000/api';
 
   // Colors
   static const int primaryColor = 0xFF1A5C3A;
