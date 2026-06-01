@@ -241,16 +241,25 @@ class _LoanScreenState extends State<LoanScreen> {
         ? (loan.amount - loan.outstandingBalance) / loan.amount
         : 0.0;
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => LoanDetailsScreen(loanId: loan.id ?? ''),
-          ),
-        );
-      },
-      child: Container(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          print('DEBUG: Loan card tapped - ${loan.id}');
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LoanDetailsScreen(loanId: loan.id),
+            ),
+          ).catchError((e) {
+            print('DEBUG: Navigation error - $e');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: $e')),
+            );
+          });
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -377,6 +386,7 @@ class _LoanScreenState extends State<LoanScreen> {
             ],
           ],
         ),
+      ),
       ),
     );
   }
