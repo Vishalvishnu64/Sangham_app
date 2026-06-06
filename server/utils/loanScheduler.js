@@ -32,7 +32,7 @@ function initLoanInterestScheduler() {
         
         // Add new month's interest to current month's interest
         loan.currentMonthInterest = newInterest;
-        loan.outstandingBalance = loan.remainingPrincipal + newInterest;
+        loan.outstandingBalance = loan.remainingPrincipal; // Principal only, interest is separate
         loan.interestCalculatedDate = new Date();
         
         await loan.save();
@@ -70,7 +70,7 @@ async function runImmediateInterestCalculation() {
       const newInterest = calculateMonthlyInterest(loan.remainingPrincipal);
       
       loan.currentMonthInterest = newInterest;
-      loan.outstandingBalance = loan.remainingPrincipal + newInterest;
+      loan.outstandingBalance = loan.remainingPrincipal; // Principal only, interest is separate
       loan.interestCalculatedDate = new Date();
       
       await loan.save();

@@ -66,9 +66,10 @@ router.get('/admin', auth, adminOnly, async (req, res) => {
     // Total loans outstanding
     const loansOutstandingResult = await Loan.aggregate([
       { $match: { status: 'active' } },
-      { $group: { _id: null, total: { $sum: '$outstandingBalance' } } }
+      { $group: { _id: null, totalPrincipal: { $sum: '$remainingPrincipal' }, totalInterest: { $sum: '$currentMonthInterest' } } }
     ]);
-    const totalLoansOutstanding = loansOutstandingResult[0]?.total || 0;
+    const totalLoansOutstanding = loansOutstandingResult[0]?.totalPrincipal || 0;
+    const totalLoansInterest = loansOutstandingResult[0]?.totalInterest || 0;
     const activeLoansCount = await Loan.countDocuments({ status: 'active' });
 
     res.json({
@@ -81,6 +82,7 @@ router.get('/admin', auth, adminOnly, async (req, res) => {
       notPaidThisWeek: totalMembers - paidThisWeek.length,
       recentTransactions,
       totalLoansOutstanding,
+      totalLoansInterest,
       activeLoansCount
     });
   } catch (error) {
@@ -125,12 +127,13 @@ router.get('/user/:id', auth, async (req, res) => {
     const totalPresent = attendanceRecords.filter(r => r.status === 'present').length;
     const totalAttendance = attendanceRecords.length;
 
-    // Loan balance
+    // Loan balance - principal and interest separate
     const loanResult = await Loan.aggregate([
       { $match: { userId: user._id, status: 'active' } },
-      { $group: { _id: null, total: { $sum: '$outstandingBalance' } } }
+      { $group: { _id: null, totalPrincipal: { $sum: '$remainingPrincipal' }, totalInterest: { $sum: '$currentMonthInterest' } } }
     ]);
-    const loanBalance = loanResult[0]?.total || 0;
+    const loanBalance = loanResult[0]?.totalPrincipal || 0;
+    const loanInterestDue = loanResult[0]?.totalInterest || 0;
     const activeLoans = await Loan.countDocuments({ userId: user._id, status: 'active' });
 
     res.json({
@@ -149,6 +152,7 @@ router.get('/user/:id', auth, async (req, res) => {
         consistency: totalAttendance > 0 ? Math.round((totalPresent / totalAttendance) * 100) : 0
       },
       loanBalance,
+      loanInterestDue,
       activeLoans
     });
   } catch (error) {

@@ -17,7 +17,11 @@ class AuthProvider extends ChangeNotifier {
   bool get isAdmin => _user?.role == 'admin';
 
   AuthProvider() {
-    _loadSavedAuth();
+    // Constructor does not load auth automatically anymore. We will call init() explicitly.
+  }
+
+  Future<void> init() async {
+    await _loadSavedAuth();
   }
 
   Future<void> _loadSavedAuth() async {

@@ -1,6 +1,14 @@
 /**
  * Loan Interest Calculation Service
  * Rate: 1% per month (100 Rs per 10,000 Rs)
+ * 
+ * IMPORTANT: Interest is SEPARATE from the loan principal.
+ * - outstandingBalance = remainingPrincipal only (no interest added)
+ * - currentMonthInterest = 1% of remainingPrincipal (separate monthly charge)
+ * - When principal is repaid, next month's interest recalculates on new lower principal
+ * 
+ * Example: Loan = 10000, Interest = 100/month
+ *   Member repays 500 → remainingPrincipal = 9500, next month interest = 95
  */
 
 /**
@@ -10,11 +18,12 @@
  */
 function calculateMonthlyInterest(remainingPrincipal) {
   const interestRate = 0.01; // 1% per month
-  return remainingPrincipal * interestRate;
+  return Math.round(remainingPrincipal * interestRate);
 }
 
 /**
- * Get total amount due (principal + current month interest)
+ * Get total amount due breakdown
+ * Principal and interest are SEPARATE
  * @param {number} remainingPrincipal
  * @param {number} currentMonthInterest
  * @returns {object} - { remainingPrincipal, interestDue, totalDue }
@@ -29,18 +38,24 @@ function getTotalAmountDue(remainingPrincipal, currentMonthInterest) {
 
 /**
  * Process a loan repayment
- * Priority: Interest first, then Principal
+ * 
+ * Repayment goes ONLY to principal (interest is paid separately).
+ * After principal is reduced, interest is recalculated for next month.
+ * 
+ * If the member pays interest separately, use processInterestPayment().
+ * 
  * @param {object} loan - Loan document from DB
  * @param {number} amountPaid - Amount user is paying
+ * @param {string} paymentType - 'principal', 'interest', or 'both'
  * @returns {object} - Updated loan object with new calculation
  */
-function processRepayment(loan, amountPaid) {
+function processRepayment(loan, amountPaid, paymentType = 'principal') {
   let remaining = amountPaid;
   let interestPaid = 0;
   let principalPaid = 0;
 
-  // Step 1: Pay interest first (if there is outstanding interest)
-  if (loan.currentMonthInterest > 0) {
+  if (paymentType === 'interest') {
+    // Pay only interest
     if (remaining >= loan.currentMonthInterest) {
       interestPaid = loan.currentMonthInterest;
       remaining -= loan.currentMonthInterest;
@@ -50,30 +65,49 @@ function processRepayment(loan, amountPaid) {
       loan.currentMonthInterest -= remaining;
       remaining = 0;
     }
+  } else if (paymentType === 'both') {
+    // Pay interest first, then principal
+    if (loan.currentMonthInterest > 0) {
+      if (remaining >= loan.currentMonthInterest) {
+        interestPaid = loan.currentMonthInterest;
+        remaining -= loan.currentMonthInterest;
+        loan.currentMonthInterest = 0;
+      } else {
+        interestPaid = remaining;
+        loan.currentMonthInterest -= remaining;
+        remaining = 0;
+      }
+    }
+    // Remaining goes to principal
+    if (remaining > 0) {
+      principalPaid = remaining;
+      loan.remainingPrincipal -= remaining;
+      remaining = 0;
+    }
+  } else {
+    // Default: pay only principal
+    principalPaid = amountPaid;
+    loan.remainingPrincipal -= amountPaid;
   }
 
-  // Step 2: Pay remaining amount towards principal
-  if (remaining > 0) {
-    principalPaid = remaining;
-    loan.remainingPrincipal -= remaining;
-  }
-
-  // Step 3: Update cumulative interest paid
+  // Update cumulative interest paid
   loan.totalInterestPaid += interestPaid;
 
-  // Step 4: Recalculate interest for next month (based on new principal)
-  if (loan.remainingPrincipal > 0) {
-    loan.currentMonthInterest = calculateMonthlyInterest(loan.remainingPrincipal);
-  } else {
+  // Check if loan is fully repaid
+  if (loan.remainingPrincipal <= 0) {
     loan.remainingPrincipal = 0;
     loan.currentMonthInterest = 0;
     loan.status = 'repaid';
+    loan.repaidDate = new Date();
+  } else {
+    // Recalculate interest for next month based on new remaining principal
+    loan.currentMonthInterest = calculateMonthlyInterest(loan.remainingPrincipal);
   }
 
-  // Step 5: Update outstanding balance
-  loan.outstandingBalance = loan.remainingPrincipal + loan.currentMonthInterest;
+  // Outstanding balance = remaining principal only (interest is separate)
+  loan.outstandingBalance = loan.remainingPrincipal;
 
-  // Step 6: Record repayment in history
+  // Record repayment in history
   if (!loan.repayments) {
     loan.repayments = [];
   }
@@ -83,10 +117,10 @@ function processRepayment(loan, amountPaid) {
     principalPaid,
     interestPaid,
     totalPaid: amountPaid,
-    remainingBalance: loan.outstandingBalance
+    remainingBalance: loan.remainingPrincipal
   });
 
-  // Step 7: Mark interest calculation date
+  // Mark interest calculation date
   loan.interestCalculatedDate = new Date();
 
   return {
@@ -95,9 +129,10 @@ function processRepayment(loan, amountPaid) {
       totalPaid: amountPaid,
       principalPaid,
       interestPaid,
+      paymentType,
       newRemainingPrincipal: loan.remainingPrincipal,
       newCurrentMonthInterest: loan.currentMonthInterest,
-      totalOutstanding: loan.outstandingBalance
+      totalOutstanding: loan.remainingPrincipal
     }
   };
 }
@@ -105,6 +140,7 @@ function processRepayment(loan, amountPaid) {
 /**
  * Calculate accrued interest for all active loans
  * Called monthly via cron job
+ * Interest is recalculated based on current remaining principal
  * @param {array} loans - Array of active loan documents
  * @returns {array} - Updated loans
  */
@@ -114,20 +150,14 @@ function accrueMonthlyInterest(loans) {
       // Calculate new month's interest based on current remaining principal
       const newMonthlyInterest = calculateMonthlyInterest(loan.remainingPrincipal);
       
-      // For the first calculation, use the full amount
-      // Otherwise, add new month's interest to existing
-      if (!loan.interestCalculatedDate) {
-        loan.currentMonthInterest = newMonthlyInterest;
-      } else {
-        // Add new month's interest to any unpaid interest
-        loan.currentMonthInterest += newMonthlyInterest;
-      }
+      // Set this month's interest (not accumulated - fresh calculation each month)
+      loan.currentMonthInterest = newMonthlyInterest;
 
       // Update interest calculated date
       loan.interestCalculatedDate = new Date();
       
-      // Update outstanding balance
-      loan.outstandingBalance = loan.remainingPrincipal + loan.currentMonthInterest;
+      // Outstanding balance = principal only (interest is separate)
+      loan.outstandingBalance = loan.remainingPrincipal;
     }
     return loan;
   });
@@ -146,13 +176,15 @@ function getLoanDetails(loan) {
     remainingPrincipal: loan.remainingPrincipal,
     currentMonthInterest: loan.currentMonthInterest,
     totalInterestPaid: loan.totalInterestPaid,
-    outstandingBalance: loan.outstandingBalance,
+    outstandingBalance: loan.remainingPrincipal, // principal only
     status: loan.status,
     issuedDate: loan.issuedDate,
-    interestRate: `${loan.interestRate * 100}% per month`,
-    lastInterestCalculated: loan.interestCalculatedDate,
-    repaymentHistory: loan.repayments || [],
-    note: loan.note
+    interestRate: `${(loan.interestRate || 0.01) * 100}% per month`,
+    interestCalculatedDate: loan.interestCalculatedDate,
+    repayments: loan.repayments || [],
+    repaidDate: loan.repaidDate,
+    note: loan.note,
+    createdAt: loan.createdAt
   };
 }
 

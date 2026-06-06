@@ -212,103 +212,153 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
           children: [
             Icon(Icons.payments, color: Color(0xFF4CAF50)),
             SizedBox(width: 10),
-            Text('Record Repayment',
+            Text('Record Payment',
                 style: TextStyle(
                     color: Color(0xFF1A3C34), fontWeight: FontWeight.bold)),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF3E0),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline,
-                      color: Colors.orange, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Outstanding: ${_currencyFormat.format(loan.outstandingBalance)}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Colors.orange,
-                    ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Interest Section
+              if (loan.currentMonthInterest > 0) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A5C3A).withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF1A5C3A).withValues(alpha: 0.2)),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: amountCtrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Repayment Amount',
-                prefixText: '₹  ',
-                prefixStyle: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF4CAF50),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.percent, color: Color(0xFF1A5C3A), size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Monthly Interest', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(_currencyFormat.format(loan.currentMonthInterest), style: const TextStyle(color: Color(0xFF1A5C3A), fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          _processPayment(loan.id, loan.currentMonthInterest, 'interest');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A5C3A),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        child: const Text('Pay Interest'),
+                      ),
+                    ],
+                  ),
                 ),
-                filled: true,
-                fillColor: const Color(0xFFF5F5F0),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+              ],
+              
+              // Principal Section
+              const Text('Pay Loan Principal', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              const SizedBox(height: 4),
+              Text('Remaining: ${_currencyFormat.format(loan.remainingPrincipal)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountCtrl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Enter principal amount',
+                  prefixText: '₹  ',
+                  prefixStyle: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF5F5F0),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final amount = double.tryParse(amountCtrl.text);
+                    if (amount == null || amount <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Enter valid principal amount')),
+                      );
+                      return;
+                    }
+                    if (amount > loan.remainingPrincipal) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Amount exceeds principal (${_currencyFormat.format(loan.remainingPrincipal)})')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(ctx);
+                    _processPayment(loan.id, amount, 'principal');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Pay Principal'),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final amount = double.tryParse(amountCtrl.text);
-              if (amount == null || amount <= 0) return;
-              if (amount > loan.outstandingBalance) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Amount exceeds outstanding balance')),
-                );
-                return;
-              }
-
-              Navigator.pop(ctx);
-              try {
-                final result = await ApiService.repayLoan(loan.id, amount);
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(result['message'] ?? 'Repayment recorded'),
-                    backgroundColor: const Color(0xFF4CAF50),
-                  ),
-                );
-                _loadLoans();
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to record repayment')),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('Record Payment'),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _processPayment(String loanId, double amount, String paymentType) async {
+    try {
+      final result = await ApiService.repayLoan(
+        loanId,
+        amount,
+        paymentType: paymentType,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true || result['message'] != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Payment recorded successfully'),
+            backgroundColor: const Color(0xFF4CAF50),
+          ),
+        );
+        _loadLoans();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'] ?? 'Payment failed')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to record payment')),
+      );
+    }
   }
 
   @override
@@ -333,6 +383,7 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'admin_loan_management_fab',
         onPressed: _showIssueLoanDialog,
         backgroundColor: const Color(0xFF1A5C3A),
         foregroundColor: Colors.white,
@@ -382,49 +433,83 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
           ),
         ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TOTAL OUTSTANDING',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
-                    fontSize: 10,
-                    letterSpacing: 1.5,
-                    fontWeight: FontWeight.w500,
-                  ),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'TOTAL LOAN OUTSTANDING',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 10,
+                        letterSpacing: 1.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _currencyFormat.format(_summary?['totalOutstanding'] ?? 0),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  _currencyFormat.format(_summary?['totalOutstanding'] ?? 0),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ],
-            ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.people, color: Colors.white70, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${_summary?['activeCount'] ?? 0} Active',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          // Interest due row
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(20),
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               children: [
-                const Icon(Icons.people, color: Colors.white70, size: 16),
-                const SizedBox(width: 6),
+                const Icon(Icons.percent, color: Colors.white70, size: 16),
+                const SizedBox(width: 8),
                 Text(
-                  '${_summary?['activeCount'] ?? 0} Active',
+                  'Monthly Interest Due: ',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
+                ),
+                Text(
+                  _currencyFormat.format(_summary?['totalInterestDue'] ?? 0),
                   style: const TextStyle(
                     color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
                   ),
                 ),
               ],
@@ -462,7 +547,7 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
       itemBuilder: (context, index) {
         final loan = loans[index];
         final progress = loan.amount > 0
-            ? (loan.amount - loan.outstandingBalance) / loan.amount
+            ? (loan.amount - loan.remainingPrincipal) / loan.amount
             : 0.0;
 
         return Container(
@@ -541,7 +626,7 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
                 ],
               ),
               const SizedBox(height: 14),
-              // Amount details
+              // Amount details - Loan and Interest SEPARATE
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -564,11 +649,11 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        const Text('Outstanding',
+                        const Text('Remaining',
                             style:
                                 TextStyle(fontSize: 11, color: Colors.grey)),
                         Text(
-                          _currencyFormat.format(loan.outstandingBalance),
+                          _currencyFormat.format(loan.remainingPrincipal),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -579,6 +664,38 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
                     ),
                 ],
               ),
+              // Monthly interest (separate row)
+              if (isActive) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A5C3A).withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.percent, size: 14, color: Color(0xFF1A5C3A)),
+                      const SizedBox(width: 6),
+                      const Text('Monthly Interest: ',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(
+                        _currencyFormat.format(loan.currentMonthInterest),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Color(0xFF1A5C3A),
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '(1% of ${_currencyFormat.format(loan.remainingPrincipal)})',
+                        style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               if (loan.note.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -611,7 +728,7 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
                   child: OutlinedButton.icon(
                     onPressed: () => _showRepayDialog(loan),
                     icon: const Icon(Icons.payments, size: 18),
-                    label: const Text('Record Repayment'),
+                    label: const Text('Record Payment'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF4CAF50),
                       side: const BorderSide(color: Color(0xFF4CAF50)),

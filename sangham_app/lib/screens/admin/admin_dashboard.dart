@@ -94,14 +94,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: const Icon(
-                                  Icons.account_balance_wallet,
+                                  Icons.cottage_rounded,
                                   color: Colors.white,
                                   size: 22,
                                 ),
                               ),
                               const SizedBox(width: 10),
                               const Text(
-                                'The Digital Ledger',
+                                'Sangham',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 18,
@@ -171,48 +171,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
             ),
 
-            // Quick Actions
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _QuickActionButton(
-                        icon: Icons.add_circle_outline,
-                        label: 'Contribution',
-                        color: const Color(0xFF1A5C3A),
-                        onTap: () {
-                          // Navigate to contribution tab
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _QuickActionButton(
-                        icon: Icons.fact_check_outlined,
-                        label: 'Attendance',
-                        color: const Color(0xFF3F51B5),
-                        onTap: () {
-                          // Navigate to attendance tab
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _QuickActionButton(
-                        icon: Icons.account_balance,
-                        label: 'Loans',
-                        color: const Color(0xFFF57C00),
-                        onTap: () {
-                          // Navigate to loans tab
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+
 
             // Weekly Collection Status
             SliverToBoxAdapter(
@@ -462,50 +421,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 }
 
-class _QuickActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _QuickActionButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      elevation: 1,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _StatChip extends StatelessWidget {
   final IconData icon;

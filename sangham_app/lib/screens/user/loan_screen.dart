@@ -15,6 +15,7 @@ class LoanScreen extends StatefulWidget {
 class _LoanScreenState extends State<LoanScreen> {
   List<LoanModel> _loans = [];
   double _totalOutstanding = 0;
+  double _totalInterestDue = 0;
   List<dynamic> _loanTransactions = [];
   bool _isLoading = true;
   final _currencyFormat =
@@ -34,6 +35,7 @@ class _LoanScreenState extends State<LoanScreen> {
         _loans =
             (data['loans'] as List).map((l) => LoanModel.fromJson(l)).toList();
         _totalOutstanding = (data['totalOutstanding'] ?? 0).toDouble();
+        _totalInterestDue = (data['totalInterestDue'] ?? 0).toDouble();
         _loanTransactions = data['loanTransactions'] ?? [];
         _isLoading = false;
       });
@@ -100,24 +102,58 @@ class _LoanScreenState extends State<LoanScreen> {
                             ],
                           ),
                           const Spacer(),
-                          Text(
-                            'OUTSTANDING BALANCE',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 11,
-                              letterSpacing: 1.5,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _isLoading
-                                ? '...'
-                                : _currencyFormat.format(_totalOutstanding),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 36,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'LOAN BALANCE',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.7),
+                                      fontSize: 11,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _isLoading
+                                        ? '...'
+                                        : _currencyFormat.format(_totalOutstanding),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    'INTEREST DUE',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.7),
+                                      fontSize: 11,
+                                      letterSpacing: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _isLoading
+                                        ? '...'
+                                        : _currencyFormat.format(_totalInterestDue),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -238,7 +274,7 @@ class _LoanScreenState extends State<LoanScreen> {
 
   Widget _buildLoanCard(LoanModel loan, {required bool isActive}) {
     final progress = loan.amount > 0
-        ? (loan.amount - loan.outstandingBalance) / loan.amount
+        ? (loan.amount - loan.remainingPrincipal) / loan.amount
         : 0.0;
 
     return Material(
@@ -343,13 +379,28 @@ class _LoanScreenState extends State<LoanScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Remaining to repay',
+                  const Text('Remaining Principal',
                       style: TextStyle(fontSize: 12, color: Colors.grey)),
                   Text(
-                    _currencyFormat.format(loan.outstandingBalance),
+                    _currencyFormat.format(loan.remainingPrincipal),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Colors.orange,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Interest Due (This Month)',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(
+                    _currencyFormat.format(loan.currentMonthInterest),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A5C3A),
                     ),
                   ),
                 ],
@@ -411,7 +462,8 @@ class _LoanScreenState extends State<LoanScreen> {
           final amount = (t['amount'] ?? 0).toDouble();
           final date = DateTime.tryParse(t['date'] ?? '');
           final note = t['note'] ?? '';
-          final isRepayment = type == 'loan_repayment';
+          final isRepayment = type == 'loan_repayment' || type == 'loan_interest_payment';
+          final isInterest = type == 'loan_interest_payment';
 
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -431,7 +483,7 @@ class _LoanScreenState extends State<LoanScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
-                    isRepayment ? Icons.payments : Icons.account_balance,
+                    isInterest ? Icons.percent : (isRepayment ? Icons.payments : Icons.account_balance),
                     color: isRepayment
                         ? const Color(0xFF4CAF50)
                         : Colors.orange,

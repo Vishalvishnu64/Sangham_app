@@ -108,7 +108,7 @@ class _SignupScreenState extends State<SignupScreen>
                 ],
               ),
               child: const Icon(
-                Icons.account_balance_wallet,
+                Icons.cottage_rounded,
                 size: 30,
                 color: Color(0xFF1A5C3A),
               ),

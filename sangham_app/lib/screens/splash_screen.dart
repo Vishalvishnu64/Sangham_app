@@ -33,7 +33,21 @@ class _SplashScreenState extends State<SplashScreen>
     );
     _controller.forward();
 
-    Future.delayed(const Duration(seconds: 2), _navigate);
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Wait for the auth provider to load and wait 2 seconds concurrently
+    await Future.wait([
+      auth.init(),
+      Future.delayed(const Duration(seconds: 2)),
+    ]);
+    
+    if (mounted) {
+      _navigate();
+    }
   }
 
   void _navigate() {
@@ -90,14 +104,14 @@ class _SplashScreenState extends State<SplashScreen>
                     ],
                   ),
                   child: const Icon(
-                    Icons.account_balance_wallet,
+                    Icons.cottage_rounded,
                     size: 40,
                     color: Color(0xFF1A5C3A),
                   ),
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  'The Digital Ledger',
+                  'Sangham',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,

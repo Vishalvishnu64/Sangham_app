@@ -28,7 +28,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Calculate initial monthly interest
+    // Calculate initial monthly interest (separate from principal)
     const initialInterest = calculateMonthlyInterest(amount);
 
     const loan = new Loan({
@@ -36,7 +36,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
       amount,
       principalAmount: amount,
       remainingPrincipal: amount,
-      outstandingBalance: amount + initialInterest,
+      outstandingBalance: amount, // Principal only, interest is separate
       currentMonthInterest: initialInterest,
       interestRate: 0.01,
       interestCalculatedDate: new Date(),
@@ -79,11 +79,11 @@ router.get('/', auth, adminOnly, async (req, res) => {
       .populate('createdBy', 'name')
       .sort({ createdAt: -1 });
 
-    // Calculate summary
+    // Calculate summary - principal and interest are separate
     const totalLoaned = loans.reduce((sum, l) => sum + l.principalAmount, 0);
-    const totalOutstanding = loans
+    const totalPrincipalOutstanding = loans
       .filter(l => l.status === 'active')
-      .reduce((sum, l) => sum + l.outstandingBalance, 0);
+      .reduce((sum, l) => sum + l.remainingPrincipal, 0);
     const totalInterestDue = loans
       .filter(l => l.status === 'active')
       .reduce((sum, l) => sum + l.currentMonthInterest, 0);
@@ -92,7 +92,7 @@ router.get('/', auth, adminOnly, async (req, res) => {
       loans,
       summary: {
         totalLoaned,
-        totalOutstanding,
+        totalOutstanding: totalPrincipalOutstanding, // Principal only
         totalInterestDue,
         activeCount: loans.filter(l => l.status === 'active').length,
         repaidCount: loans.filter(l => l.status === 'repaid').length
@@ -117,7 +117,10 @@ router.get('/user/:userId', auth, async (req, res) => {
 
     const totalOutstanding = loans
       .filter(l => l.status === 'active')
-      .reduce((sum, l) => sum + l.outstandingBalance, 0);
+      .reduce((sum, l) => sum + l.remainingPrincipal, 0);
+    const totalInterestDue = loans
+      .filter(l => l.status === 'active')
+      .reduce((sum, l) => sum + l.currentMonthInterest, 0);
 
     // Get loan-related transactions for this user
     const loanTransactions = await Transaction.find({
@@ -128,6 +131,7 @@ router.get('/user/:userId', auth, async (req, res) => {
     res.json({
       loans,
       totalOutstanding,
+      totalInterestDue,
       loanTransactions
     });
   } catch (error) {
@@ -135,13 +139,17 @@ router.get('/user/:userId', auth, async (req, res) => {
   }
 });
 
-// POST /api/loans/:id/repay - Record a repayment with interest deduction
+// POST /api/loans/:id/repay - Record a repayment (principal or interest, separately)
 router.post('/:id/repay', auth, async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { amount, paymentType = 'principal' } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ message: 'Valid repayment amount is required' });
+    }
+
+    if (!['principal', 'interest', 'both'].includes(paymentType)) {
+      return res.status(400).json({ message: 'paymentType must be principal, interest, or both' });
     }
 
     const loan = await Loan.findById(req.params.id);
@@ -158,27 +166,42 @@ router.post('/:id/repay', auth, async (req, res) => {
       return res.status(400).json({ message: 'Loan is already fully repaid' });
     }
 
-    const totalDue = loan.remainingPrincipal + loan.currentMonthInterest;
-    if (amount > totalDue) {
+    // Validate amount based on payment type
+    if (paymentType === 'principal' && amount > loan.remainingPrincipal) {
       return res.status(400).json({
-        message: `Repayment amount (₹${amount}) exceeds total due (₹${totalDue})`,
-        totalDue,
-        remainingPrincipal: loan.remainingPrincipal,
+        message: `Amount (₹${amount}) exceeds remaining principal (₹${loan.remainingPrincipal})`,
+        remainingPrincipal: loan.remainingPrincipal
+      });
+    }
+    if (paymentType === 'interest' && amount > loan.currentMonthInterest) {
+      return res.status(400).json({
+        message: `Amount (₹${amount}) exceeds interest due (₹${loan.currentMonthInterest})`,
         interestDue: loan.currentMonthInterest
       });
     }
+    if (paymentType === 'both') {
+      const totalDue = loan.remainingPrincipal + loan.currentMonthInterest;
+      if (amount > totalDue) {
+        return res.status(400).json({
+          message: `Amount (₹${amount}) exceeds total due (₹${totalDue})`,
+          remainingPrincipal: loan.remainingPrincipal,
+          interestDue: loan.currentMonthInterest
+        });
+      }
+    }
 
-    // Process the repayment with interest calculation
-    const { loan: updatedLoan, repaymentSummary } = processRepayment(loan, amount);
+    // Process the repayment - principal and interest handled separately
+    const { loan: updatedLoan, repaymentSummary } = processRepayment(loan, amount, paymentType);
     
     // Save updated loan
     await updatedLoan.save();
 
     // Create a repayment transaction
+    const txType = paymentType === 'interest' ? 'loan_interest_payment' : 'loan_repayment';
     const transaction = new Transaction({
       userId: loan.userId,
       amount: amount,
-      type: 'loan_repayment',
+      type: txType,
       note: `Loan repayment - Principal: ₹${repaymentSummary.principalPaid}, Interest: ₹${repaymentSummary.interestPaid}`,
       date: new Date(),
       createdBy: req.user._id
@@ -240,7 +263,7 @@ router.post('/:id/calculate-interest', auth, adminOnly, async (req, res) => {
     const newInterest = calculateMonthlyInterest(loan.remainingPrincipal);
     
     loan.currentMonthInterest = newInterest;
-    loan.outstandingBalance = loan.remainingPrincipal + newInterest;
+    loan.outstandingBalance = loan.remainingPrincipal; // Principal only
     loan.interestCalculatedDate = new Date();
     
     await loan.save();
@@ -268,7 +291,7 @@ router.post('/admin/calculate-all-interests', auth, adminOnly, async (req, res) 
     for (let loan of activeLoans) {
       const newInterest = calculateMonthlyInterest(loan.remainingPrincipal);
       loan.currentMonthInterest = newInterest;
-      loan.outstandingBalance = loan.remainingPrincipal + newInterest;
+      loan.outstandingBalance = loan.remainingPrincipal; // Principal only
       loan.interestCalculatedDate = new Date();
       
       await loan.save();

@@ -100,14 +100,14 @@ class _LoginScreenState extends State<LoginScreen>
                 ],
               ),
               child: const Icon(
-                Icons.account_balance_wallet,
+                Icons.cottage_rounded,
                 size: 36,
                 color: Color(0xFF1A5C3A),
               ),
             ),
             const SizedBox(height: 16),
             const Text(
-              'The Digital Ledger',
+              'Sangham',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,

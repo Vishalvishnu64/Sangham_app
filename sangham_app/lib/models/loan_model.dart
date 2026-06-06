@@ -4,7 +4,9 @@ class LoanModel {
   final String userName;
   final String userPhone;
   final double amount;
-  final double outstandingBalance;
+  final double outstandingBalance; // Principal only
+  final double currentMonthInterest; // Separate monthly interest
+  final double remainingPrincipal;
   final String status;
   final String note;
   final DateTime issuedDate;
@@ -18,6 +20,8 @@ class LoanModel {
     this.userPhone = '',
     required this.amount,
     required this.outstandingBalance,
+    this.currentMonthInterest = 0,
+    this.remainingPrincipal = 0,
     required this.status,
     this.note = '',
     required this.issuedDate,
@@ -34,7 +38,9 @@ class LoanModel {
       userName: json['userId'] is Map ? (json['userId']['name'] ?? '') : '',
       userPhone: json['userId'] is Map ? (json['userId']['phone'] ?? '') : '',
       amount: (json['amount'] ?? 0).toDouble(),
-      outstandingBalance: (json['outstandingBalance'] ?? 0).toDouble(),
+      outstandingBalance: (json['outstandingBalance'] ?? json['remainingPrincipal'] ?? 0).toDouble(),
+      currentMonthInterest: (json['currentMonthInterest'] ?? 0).toDouble(),
+      remainingPrincipal: (json['remainingPrincipal'] ?? json['outstandingBalance'] ?? 0).toDouble(),
       status: json['status'] ?? 'active',
       note: json['note'] ?? '',
       issuedDate: DateTime.tryParse(json['issuedDate'] ?? '') ?? DateTime.now(),

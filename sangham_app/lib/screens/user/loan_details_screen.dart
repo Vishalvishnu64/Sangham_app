@@ -21,93 +21,152 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
     _loanDetailsFuture = ApiService.getLoanDetails(widget.loanId);
   }
 
-  void _showRepaymentDialog() {
+  void _showRepaymentDialog(Map<String, dynamic> loanData) {
     if (_currentLoan == null) return;
 
     final controller = TextEditingController();
-    final totalDue = ((_currentLoan!['remainingPrincipal'] as num?)?.toDouble() ?? 0) +
-        ((_currentLoan!['currentMonthInterest'] as num?)?.toDouble() ?? 0);
+    final remainingPrincipal = (loanData['remainingPrincipal'] as num?)?.toDouble() ?? 0;
+    final currentMonthInterest = (loanData['currentMonthInterest'] as num?)?.toDouble() ?? 0;
+    
+    String selectedPaymentType = 'principal';
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Make Repayment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Total Due: ${_currencyFormat.format(totalDue)}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                hintText: 'Enter amount to pay',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Make Repayment'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Interest Section
+              if (currentMonthInterest > 0) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A5C3A).withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF1A5C3A).withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.percent, color: Color(0xFF1A5C3A), size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Monthly Interest', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(_currencyFormat.format(currentMonthInterest), style: const TextStyle(color: Color(0xFF1A5C3A), fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          _processPayment(widget.loanId, currentMonthInterest, 'interest');
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A5C3A),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        child: const Text('Pay Interest'),
+                      ),
+                    ],
+                  ),
                 ),
-                prefixText: '₹ ',
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+              ],
+              
+              // Principal Section
+              const Text('Pay Loan Principal', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              const SizedBox(height: 4),
+              Text('Remaining: ${_currencyFormat.format(remainingPrincipal)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Enter principal amount',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  prefixText: '₹ ',
+                ),
               ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final amount = double.tryParse(controller.text);
+                    if (amount == null || amount <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Enter valid principal amount')),
+                      );
+                      return;
+                    }
+                    if (amount > remainingPrincipal) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Amount exceeds principal (${_currencyFormat.format(remainingPrincipal)})')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(context);
+                    _processPayment(widget.loanId, amount, 'principal');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Pay Principal'),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final amount = double.tryParse(controller.text);
-              if (amount == null || amount <= 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Enter valid amount')),
-                );
-                return;
-              }
-
-              if (amount > totalDue) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Amount exceeds total due (${_currencyFormat.format(totalDue)})')),
-                );
-                return;
-              }
-
-              try {
-                final result = await ApiService.repayLoan(
-                  widget.loanId,
-                  amount,
-                );
-
-                if (!mounted) return;
-
-                if (result['success'] == true) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Payment recorded successfully')),
-                  );
-                  Navigator.pop(context);
-                  setState(() {
-                    _loanDetailsFuture = ApiService.getLoanDetails(widget.loanId);
-                  });
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(result['message'] ?? 'Payment failed')),
-                  );
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error: $e')),
-                );
-              }
-            },
-            child: const Text('Pay Now'),
-          ),
-        ],
       ),
     );
+  }
+
+  Future<void> _processPayment(String loanId, double amount, String paymentType) async {
+    try {
+      final result = await ApiService.repayLoan(
+        loanId,
+        amount,
+        paymentType: paymentType,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true || result['message'] != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'] ?? 'Payment recorded successfully')),
+        );
+        setState(() {
+          _loanDetailsFuture = ApiService.getLoanDetails(loanId);
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'] ?? 'Payment failed')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 
   @override
@@ -183,12 +242,12 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Total Amount Due',
+                          'Loan Principal Outstanding',
                           style: TextStyle(color: Colors.white70, fontSize: 14),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _currencyFormat.format(totalDue),
+                          _currencyFormat.format(remainingPrincipal),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 32,
@@ -203,11 +262,11 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
-                                  'Principal',
+                                  'Original Loan',
                                   style: TextStyle(color: Colors.white70, fontSize: 12),
                                 ),
                                 Text(
-                                  _currencyFormat.format(remainingPrincipal),
+                                  _currencyFormat.format(loan['principalAmount'] ?? 0),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
@@ -216,7 +275,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
                               ],
                             ),
                             Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 const Text(
                                   'Interest (This Month)',
@@ -348,11 +407,12 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
         },
       ),
       floatingActionButton: (_currentLoan?['status'] as String?)?.toLowerCase() != 'repaid'
-          ? FloatingActionButton(
+          ? FloatingActionButton.extended(
               backgroundColor: const Color(0xFF1A5C3A),
               foregroundColor: Colors.white,
-              onPressed: _showRepaymentDialog,
-              child: const Icon(Icons.add),
+              onPressed: () => _showRepaymentDialog(_currentLoan!),
+              icon: const Icon(Icons.payments),
+              label: const Text('Make Payment'),
             )
           : null,
     );

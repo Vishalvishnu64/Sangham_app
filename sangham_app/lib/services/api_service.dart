@@ -227,11 +227,11 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> repayLoan(
-      String loanId, double amount) async {
+      String loanId, double amount, {String paymentType = 'principal'}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/loans/$loanId/repay'),
       headers: await _headers(),
-      body: jsonEncode({'amount': amount}),
+      body: jsonEncode({'amount': amount, 'paymentType': paymentType}),
     );
     return jsonDecode(response.body);
   }

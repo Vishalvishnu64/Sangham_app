@@ -406,6 +406,7 @@ class _MembersScreenState extends State<MembersScreen> {
         automaticallyImplyLeading: false,
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'admin_members_fab',
         onPressed: _showAddMemberDialog,
         backgroundColor: const Color(0xFF1A5C3A),
         child: const Icon(Icons.person_add, color: Colors.white),
