@@ -3,6 +3,13 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/constants.dart';
 
+class ApiException implements Exception {
+  final String message;
+  ApiException(this.message);
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   static String get baseUrl => AppConstants.baseUrl;
 
@@ -233,7 +240,11 @@ class ApiService {
       headers: await _headers(),
       body: jsonEncode({'amount': amount, 'paymentType': paymentType}),
     );
-    return jsonDecode(response.body);
+    final data = jsonDecode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(data['message'] ?? 'Repayment failed');
+    }
+    return data;
   }
 
   static Future<Map<String, dynamic>> getLoanDetails(String loanId) async {

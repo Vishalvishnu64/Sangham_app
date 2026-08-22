@@ -12,7 +12,7 @@ const transactionSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['contribution', 'loan', 'loan_repayment', 'penalty', 'withdrawal'],
+    enum: ['contribution', 'loan', 'loan_repayment', 'loan_interest_payment', 'penalty', 'withdrawal'],
     default: 'contribution'
   },
   note: {

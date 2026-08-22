@@ -5,7 +5,6 @@ import 'user_dashboard.dart';
 import 'passbook_screen.dart';
 import 'attendance_calendar.dart';
 import 'loan_screen.dart';
-import '../auth/login_screen.dart';
 
 class UserShell extends StatefulWidget {
   const UserShell({super.key});

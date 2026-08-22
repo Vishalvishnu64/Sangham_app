@@ -103,6 +103,37 @@ router.get('/', auth, adminOnly, async (req, res) => {
   }
 });
 
+// POST /api/admin/loans/calculate-all-interests - Batch calculate interest for all active loans
+// IMPORTANT: Must be before /:id routes to avoid route matching issues
+router.post('/admin/calculate-all-interests', auth, adminOnly, async (req, res) => {
+  try {
+    const activeLoans = await Loan.find({ status: 'active', remainingPrincipal: { $gt: 0 } });
+    
+    let totalInterestAccrued = 0;
+    let processedCount = 0;
+
+    for (let loan of activeLoans) {
+      const newInterest = calculateMonthlyInterest(loan.remainingPrincipal);
+      loan.currentMonthInterest = newInterest;
+      loan.outstandingBalance = loan.remainingPrincipal; // Principal only
+      loan.interestCalculatedDate = new Date();
+      
+      await loan.save();
+      totalInterestAccrued += newInterest;
+      processedCount++;
+    }
+
+    res.json({
+      message: `Interest calculated for ${processedCount} loans`,
+      processedCount,
+      totalInterestAccrued,
+      timestamp: new Date()
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // GET /api/loans/user/:userId - Get a user's loans
 router.get('/user/:userId', auth, async (req, res) => {
   try {
@@ -192,11 +223,9 @@ router.post('/:id/repay', auth, async (req, res) => {
 
     // Process the repayment - principal and interest handled separately
     const { loan: updatedLoan, repaymentSummary } = processRepayment(loan, amount, paymentType);
-    
-    // Save updated loan
-    await updatedLoan.save();
 
-    // Create a repayment transaction
+    // Create and persist the repayment transaction FIRST.
+    // If this fails, the loan document is left untouched so the member can retry cleanly.
     const txType = paymentType === 'interest' ? 'loan_interest_payment' : 'loan_repayment';
     const transaction = new Transaction({
       userId: loan.userId,
@@ -207,6 +236,9 @@ router.post('/:id/repay', auth, async (req, res) => {
       createdBy: req.user._id
     });
     await transaction.save();
+
+    // Save updated loan
+    await updatedLoan.save();
 
     const populated = await Loan.findById(updatedLoan._id)
       .populate('userId', 'name phone')
@@ -274,36 +306,6 @@ router.post('/:id/calculate-interest', auth, adminOnly, async (req, res) => {
       currentMonthInterest: newInterest,
       remainingPrincipal: loan.remainingPrincipal,
       totalOutstanding: loan.outstandingBalance
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
-
-// POST /api/admin/loans/calculate-all-interests - Batch calculate interest for all active loans
-router.post('/admin/calculate-all-interests', auth, adminOnly, async (req, res) => {
-  try {
-    const activeLoans = await Loan.find({ status: 'active', remainingPrincipal: { $gt: 0 } });
-    
-    let totalInterestAccrued = 0;
-    let processedCount = 0;
-
-    for (let loan of activeLoans) {
-      const newInterest = calculateMonthlyInterest(loan.remainingPrincipal);
-      loan.currentMonthInterest = newInterest;
-      loan.outstandingBalance = loan.remainingPrincipal; // Principal only
-      loan.interestCalculatedDate = new Date();
-      
-      await loan.save();
-      totalInterestAccrued += newInterest;
-      processedCount++;
-    }
-
-    res.json({
-      message: `Interest calculated for ${processedCount} loans`,
-      processedCount,
-      totalInterestAccrued,
-      timestamp: new Date()
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });

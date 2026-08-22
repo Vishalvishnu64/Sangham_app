@@ -99,10 +99,12 @@ function processRepayment(loan, amountPaid, paymentType = 'principal') {
     loan.currentMonthInterest = 0;
     loan.status = 'repaid';
     loan.repaidDate = new Date();
-  } else {
-    // Recalculate interest for next month based on new remaining principal
+  } else if (principalPaid > 0) {
+    // ONLY recalculate interest for next month if principal was paid
+    // If only interest was paid, the principal didn't change, so next month's interest stays the same
     loan.currentMonthInterest = calculateMonthlyInterest(loan.remainingPrincipal);
   }
+  // If paymentType is 'interest', don't recalculate - principal unchanged = same interest next month
 
   // Outstanding balance = remaining principal only (interest is separate)
   loan.outstandingBalance = loan.remainingPrincipal;

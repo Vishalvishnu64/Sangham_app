@@ -241,10 +241,10 @@ class _LoanScreenState extends State<LoanScreen> {
 
             // Loan Transactions
             if (!_isLoading && _loanTransactions.isNotEmpty) ...[
-              SliverToBoxAdapter(
+              const SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-                  child: const Text(
+                  padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+                  child: Text(
                     'Loan History',
                     style: TextStyle(
                       fontSize: 16,
@@ -281,15 +281,14 @@ class _LoanScreenState extends State<LoanScreen> {
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          print('DEBUG: Loan card tapped - ${loan.id}');
+          final messenger = ScaffoldMessenger.of(context);
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => LoanDetailsScreen(loanId: loan.id),
             ),
           ).catchError((e) {
-            print('DEBUG: Navigation error - $e');
-            ScaffoldMessenger.of(context).showSnackBar(
+            messenger.showSnackBar(
               SnackBar(content: Text('Error: $e')),
             );
           });

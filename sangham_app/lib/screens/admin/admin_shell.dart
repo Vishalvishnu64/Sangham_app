@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
 import 'admin_dashboard.dart';
 import 'members_screen.dart';
 import 'attendance_manager.dart';
 import 'history_screen.dart';
 import 'loan_management_screen.dart';
-import '../auth/login_screen.dart';
 
 class AdminShell extends StatefulWidget {
   const AdminShell({super.key});

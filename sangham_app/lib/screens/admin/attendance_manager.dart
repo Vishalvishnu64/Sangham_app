@@ -14,7 +14,7 @@ class _AttendanceManagerState extends State<AttendanceManager> {
   final Map<String, String> _attendanceMap = {}; // userId -> present/absent
   bool _isLoading = true;
   bool _isSubmitting = false;
-  DateTime _selectedDate = DateTime.now();
+  final DateTime _selectedDate = DateTime.now();
 
   @override
   void initState() {
@@ -240,7 +240,7 @@ class _AttendanceManagerState extends State<AttendanceManager> {
                                     v ? 'present' : 'absent';
                               });
                             },
-                            activeColor: const Color(0xFF4CAF50),
+                            activeThumbColor: const Color(0xFF4CAF50),
                             inactiveThumbColor: const Color(0xFFE53935),
                           ),
                         ),

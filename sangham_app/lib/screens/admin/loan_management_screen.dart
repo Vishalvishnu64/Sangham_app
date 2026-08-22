@@ -91,7 +91,7 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
               children: [
                 // Member Dropdown
                 DropdownButtonFormField<UserModel>(
-                  value: selectedMember,
+                  initialValue: selectedMember,
                   decoration: InputDecoration(
                     labelText: 'Select Member',
                     prefixIcon: const Icon(Icons.person,
@@ -340,7 +340,7 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
 
       if (!mounted) return;
 
-      if (result['success'] == true || result['message'] != null) {
+      if (result['repaymentSummary'] != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Payment recorded successfully'),
@@ -356,7 +356,7 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to record payment')),
+        SnackBar(content: Text(e.toString())),
       );
     }
   }

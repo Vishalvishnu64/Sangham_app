@@ -149,7 +149,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
 
       if (!mounted) return;
 
-      if (result['success'] == true || result['message'] != null) {
+      if (result['repaymentSummary'] != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result['message'] ?? 'Payment recorded successfully')),
         );
@@ -230,10 +230,10 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
+                      gradient: const LinearGradient(
                         colors: [
-                          const Color(0xFF1A5C3A),
-                          const Color(0xFF2D7F52),
+                          Color(0xFF1A5C3A),
+                          Color(0xFF2D7F52),
                         ],
                       ),
                       borderRadius: BorderRadius.circular(12),
@@ -400,7 +400,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
                         ],
                       ),
                     );
-                  }).toList(),
+                  }),
               ],
             ),
           );
