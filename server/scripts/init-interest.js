@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const Loan = require('../models/Loan');
 const { calculateMonthlyInterest } = require('../utils/loanInterest');
 
-mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://vishalvishnu64:HX63KhLXb7l64Qj5@cluster0.xoito79.mongodb.net/sangham')
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/test')
   .then(async () => {
     console.log('✅ Connected to MongoDB');
     

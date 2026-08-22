@@ -4,6 +4,7 @@ node_modules/
 *.log
 .idea/
 .vscode/
+backup_*/
 
 # Ignore flutter build directory if built from here
 build/
