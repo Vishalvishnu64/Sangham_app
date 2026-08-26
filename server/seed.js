@@ -11,6 +11,13 @@ const memberNames = [
 
 async function seed() {
   try {
+    // Safety: never wipe a production database.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('⛔ Refusing to seed: NODE_ENV is set to production.');
+      console.error('   Seeding wipes all users, transactions and attendance.');
+      process.exit(1);
+    }
+
     await mongoose.connect(process.env.MONGO_URI);
     console.log('Connected to MongoDB');
 
@@ -19,14 +26,16 @@ async function seed() {
     await Transaction.deleteMany({});
     await Attendance.deleteMany({});
 
-    // Create admin
+    // Create admin (credentials from env, with dev-only fallback)
+    const adminPhone = process.env.SEED_ADMIN_PHONE || '9999999999';
+    const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin123';
     const admin = await User.create({
       name: 'Sangham Admin',
-      phone: '9999999999',
-      password: 'admin123',
+      phone: adminPhone,
+      password: adminPassword,
       role: 'admin'
     });
-    console.log('✅ Admin created: phone=9999999999, password=admin123');
+    console.log(`✅ Admin created: phone=${adminPhone}`);
 
     // Create members
     const members = [];

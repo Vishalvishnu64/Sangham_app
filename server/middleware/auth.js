@@ -10,7 +10,8 @@ const auth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id).select('-password');
+    // Soft-deleted / deactivated members must lose access immediately.
+    const user = await User.findOne({ _id: decoded.id, isActive: { $ne: false } }).select('-password');
     if (!user) {
       return res.status(401).json({ message: 'Token is not valid' });
     }

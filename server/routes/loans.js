@@ -153,10 +153,10 @@ router.get('/user/:userId', auth, async (req, res) => {
       .filter(l => l.status === 'active')
       .reduce((sum, l) => sum + l.currentMonthInterest, 0);
 
-    // Get loan-related transactions for this user
+    // Get loan-related transactions for this user (includes interest payments)
     const loanTransactions = await Transaction.find({
       userId: req.params.userId,
-      type: { $in: ['loan', 'loan_repayment'] }
+      type: { $in: ['loan', 'loan_repayment', 'loan_interest_payment'] }
     }).sort({ date: -1 });
 
     res.json({
@@ -224,21 +224,49 @@ router.post('/:id/repay', auth, async (req, res) => {
     // Process the repayment - principal and interest handled separately
     const { loan: updatedLoan, repaymentSummary } = processRepayment(loan, amount, paymentType);
 
-    // Create and persist the repayment transaction FIRST.
-    // If this fails, the loan document is left untouched so the member can retry cleanly.
-    const txType = paymentType === 'interest' ? 'loan_interest_payment' : 'loan_repayment';
-    const transaction = new Transaction({
-      userId: loan.userId,
-      amount: amount,
-      type: txType,
-      note: `Loan repayment - Principal: ₹${repaymentSummary.principalPaid}, Interest: ₹${repaymentSummary.interestPaid}`,
-      date: new Date(),
-      createdBy: req.user._id
-    });
-    await transaction.save();
+    // Persist the LOAN first (the authoritative debt record), then the
+    // transaction. If the transaction insert fails we roll the loan back so
+    // money records never disagree with the ledger.
+    const snapshot = {
+      remainingPrincipal: updatedLoan.remainingPrincipal,
+      currentMonthInterest: updatedLoan.currentMonthInterest,
+      totalInterestPaid: updatedLoan.totalInterestPaid,
+      outstandingBalance: updatedLoan.outstandingBalance,
+      status: updatedLoan.status,
+      repaidDate: updatedLoan.repaidDate,
+      interestCalculatedDate: updatedLoan.interestCalculatedDate,
+      repayments: updatedLoan.repayments ? [...updatedLoan.repayments] : []
+    };
 
-    // Save updated loan
     await updatedLoan.save();
+
+    let transaction;
+    try {
+      const txType = paymentType === 'interest' ? 'loan_interest_payment' : 'loan_repayment';
+      transaction = new Transaction({
+        userId: loan.userId,
+        amount: amount,
+        type: txType,
+        note: `Loan repayment - Principal: ₹${repaymentSummary.principalPaid}, Interest: ₹${repaymentSummary.interestPaid}`,
+        date: new Date(),
+        createdBy: req.user._id
+      });
+      await transaction.save();
+    } catch (txError) {
+      // Roll back the loan so the recorded debt stays consistent.
+      Object.assign(updatedLoan, {
+        remainingPrincipal: snapshot.remainingPrincipal,
+        currentMonthInterest: snapshot.currentMonthInterest,
+        totalInterestPaid: snapshot.totalInterestPaid,
+        outstandingBalance: snapshot.outstandingBalance,
+        status: snapshot.status,
+        repaidDate: snapshot.repaidDate,
+        interestCalculatedDate: snapshot.interestCalculatedDate,
+        repayments: snapshot.repayments
+      });
+      try { await updatedLoan.save(); } catch (_) { /* best effort */ }
+      throw txError;
+    }
 
     const populated = await Loan.findById(updatedLoan._id)
       .populate('userId', 'name phone')

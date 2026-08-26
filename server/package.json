@@ -16,5 +16,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.5.0",
     "node-cron": "^3.0.2"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^11.2.0"
   }
 }

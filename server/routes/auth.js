@@ -5,18 +5,34 @@ const { auth } = require('../middleware/auth');
 
 const router = express.Router();
 
-// POST /api/auth/register - Admin creates a user account
+// POST /api/auth/register - Public self-registration (always role: 'user').
+// Admins are provisioned via seed script or direct DB access only.
+// NOTE: 'role' is intentionally NOT read from the request body to prevent
+// privilege escalation.
 router.post('/register', async (req, res) => {
   try {
-    const { name, phone, password, role } = req.body;
+    const { name, phone, password } = req.body;
+
+    if (!name || !name.trim() || !phone || !phone.trim() || !password) {
+      return res.status(400).json({ message: 'Name, phone and password are required' });
+    }
+
+    if (String(password).length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
 
     // Check if phone already exists
-    const existing = await User.findOne({ phone });
+    const existing = await User.findOne({ phone: phone.trim() });
     if (existing) {
       return res.status(400).json({ message: 'Phone number already registered' });
     }
 
-    const user = new User({ name, phone, password, role: role || 'user' });
+    const user = new User({
+      name: name.trim(),
+      phone: phone.trim(),
+      password,
+      role: 'user',
+    });
     await user.save();
 
     res.status(201).json({
@@ -33,7 +49,8 @@ router.post('/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
 
-    const user = await User.findOne({ phone });
+    // Soft-deleted members must not be able to obtain new tokens.
+    const user = await User.findOne({ phone, isActive: { $ne: false } });
     if (!user) {
       return res.status(400).json({ message: 'Invalid phone number or password' });
     }

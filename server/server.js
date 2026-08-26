@@ -7,7 +7,25 @@ const { initLoanInterestScheduler } = require('./utils/loanScheduler');
 const app = express();
 
 // Middleware
-app.use(cors());
+// Restrict origins via CORS_ORIGIN env var (comma-separated list).
+// Falls back to allow-all only in development.
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (
+      allowedOrigins.length === 0 ||
+      !origin ||
+      allowedOrigins.includes(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+}));
 app.use(express.json());
 
 // Routes
