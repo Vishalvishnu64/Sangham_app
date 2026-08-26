@@ -9,3 +9,6 @@ backup_*/
 # Ignore flutter build directory if built from here
 build/
 .dart_tool/
+
+# Flutter/Android build artifacts
+sangham_app/android/.gradle/
