@@ -4,6 +4,7 @@ import 'members_screen.dart';
 import 'attendance_manager.dart';
 import 'history_screen.dart';
 import 'loan_management_screen.dart';
+import 'add_contribution_screen.dart';
 
 class AdminShell extends StatefulWidget {
   const AdminShell({super.key});
@@ -19,6 +20,7 @@ class _AdminShellState extends State<AdminShell> {
     AdminDashboard(),
     MembersScreen(),
     AttendanceManager(),
+    AddContributionScreen(),
     HistoryScreen(),
     LoanManagementScreen(),
   ];
@@ -69,6 +71,10 @@ class _AdminShellState extends State<AdminShell> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.calendar_today_rounded),
                 label: 'Attendance',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.savings_rounded),
+                label: 'Weekly',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.history_rounded),

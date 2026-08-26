@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../utils/transaction_style.dart';
 import '../auth/login_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -15,6 +16,7 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   Map<String, dynamic>? _dashboardData;
   bool _isLoading = true;
+  bool _hasError = false;
   final _currencyFormat = NumberFormat.currency(
     locale: 'en_IN',
     symbol: '₹',
@@ -28,15 +30,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Future<void> _loadDashboard() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final data = await ApiService.getAdminDashboard();
+      if (!mounted) return;
       setState(() {
         _dashboardData = data;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
     }
   }
 
@@ -44,7 +54,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0),
-      body: RefreshIndicator(
+      body: _hasError && !_isLoading
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.cloud_off_rounded,
+                      size: 56, color: Colors.grey.shade400),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Couldn\'t load the dashboard',
+                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: _loadDashboard,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          : RefreshIndicator(
         onRefresh: _loadDashboard,
         child: CustomScrollView(
           slivers: [
@@ -55,16 +86,38 @@ class _AdminDashboardState extends State<AdminDashboard> {
               backgroundColor: const Color(0xFF1A5C3A),
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.notifications_outlined),
-                  onPressed: () {},
-                ),
-                IconButton(
+                  tooltip: 'Logout',
                   icon: const Icon(Icons.logout),
                   onPressed: () async {
-                    await Provider.of<AuthProvider>(context, listen: false)
-                        .logout();
-                    if (!context.mounted) return;
-                    Navigator.of(context).pushReplacement(
+                    final navigator = Navigator.of(context);
+                    final auth = context.read<AuthProvider>();
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Logout?'),
+                        content:
+                            const Text('Are you sure you want to logout?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFE53935),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Logout'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !mounted) return;
+                    await auth.logout();
+                    if (!mounted) return;
+                    navigator.pushReplacement(
                       MaterialPageRoute(builder: (_) => const LoginScreen()),
                     );
                   },
@@ -134,35 +187,44 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ),
                           const SizedBox(height: 8),
                           if (_dashboardData?['monthGrowth'] != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    (_dashboardData!['monthGrowth'] as int) >= 0
-                                        ? Icons.trending_up
-                                        : Icons.trending_down,
-                                    color: Colors.greenAccent,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${_dashboardData!['monthGrowth']}% this month',
-                                    style: const TextStyle(
-                                      color: Colors.greenAccent,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
+                            Builder(builder: (context) {
+                              final growth =
+                                  (_dashboardData!['monthGrowth'] as num)
+                                      .toDouble();
+                              final isPositive = growth >= 0;
+                              final growthColor = isPositive
+                                  ? Colors.greenAccent
+                                  : const Color(0xFFFF8A80);
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isPositive
+                                          ? Icons.trending_up
+                                          : Icons.trending_down,
+                                      color: growthColor,
+                                      size: 16,
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${growth.toStringAsFixed(growth == growth.roundToDouble() ? 0 : 1)}% this month',
+                                      style: TextStyle(
+                                        color: growthColor,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
                         ],
                       ),
                     ),
@@ -242,18 +304,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
           if (!_isLoading && _dashboardData != null) ...[
             Row(
               children: [
-                _StatChip(
-                  icon: Icons.check_circle,
-                  label: 'Paid',
-                  value: '${_dashboardData!['paidThisWeek']}',
-                  color: const Color(0xFF4CAF50),
+                Expanded(
+                  child: _StatChip(
+                    icon: Icons.check_circle,
+                    label: 'Paid',
+                    value: '${_dashboardData!['paidThisWeek']}',
+                    color: const Color(0xFF4CAF50),
+                  ),
                 ),
-                const SizedBox(width: 16),
-                _StatChip(
-                  icon: Icons.cancel,
-                  label: 'Not Paid',
-                  value: '${_dashboardData!['notPaidThisWeek']}',
-                  color: const Color(0xFFE53935),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _StatChip(
+                    icon: Icons.cancel,
+                    label: 'Not Paid',
+                    value: '${_dashboardData!['notPaidThisWeek']}',
+                    color: const Color(0xFFE53935),
+                  ),
                 ),
               ],
             ),
@@ -384,34 +450,51 @@ class _AdminDashboardState extends State<AdminDashboard> {
               final name = t['userId']?['name'] ?? 'Unknown';
               final amount = t['amount'] ?? 0;
               final date = DateTime.tryParse(t['date'] ?? '');
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  backgroundColor: const Color(0xFF1A5C3A).withValues(alpha: 0.1),
-                  child: Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                      color: Color(0xFF1A5C3A),
-                      fontWeight: FontWeight.bold,
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor:
+                          const Color(0xFF1A5C3A).withValues(alpha: 0.1),
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          color: Color(0xFF1A5C3A),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                title: Text(
-                  name,
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                ),
-                subtitle: Text(
-                  date != null
-                      ? DateFormat('dd MMM yyyy').format(date)
-                      : '',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                trailing: Text(
-                  '+${_currencyFormat.format(amount)}',
-                  style: const TextStyle(
-                    color: Color(0xFF4CAF50),
-                    fontWeight: FontWeight.bold,
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (date != null)
+                            Text(
+                              DateFormat('dd MMM yyyy').format(date),
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.grey),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      AppFormat.signed(amount),
+                      style: TextStyle(
+                        color: TxStyle.amountColor(amount),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               );
             }),
@@ -441,12 +524,15 @@ class _StatChip extends StatelessWidget {
       children: [
         Icon(icon, color: color, size: 18),
         const SizedBox(width: 6),
-        Text(
-          '$value $label',
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
+        Flexible(
+          child: Text(
+            '$value $label',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
           ),
         ),
       ],

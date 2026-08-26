@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
+import '../../utils/transaction_style.dart';
 import '../../models/loan_model.dart';
 import 'loan_details_screen.dart';
 
@@ -18,6 +19,8 @@ class _LoanScreenState extends State<LoanScreen> {
   double _totalInterestDue = 0;
   List<dynamic> _loanTransactions = [];
   bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
   final _currencyFormat =
       NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
@@ -28,9 +31,13 @@ class _LoanScreenState extends State<LoanScreen> {
   }
 
   Future<void> _loadLoans() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final data = await ApiService.getUserLoans(widget.userId);
+      if (!mounted) return;
       setState(() {
         _loans =
             (data['loans'] as List).map((l) => LoanModel.fromJson(l)).toList();
@@ -40,7 +47,12 @@ class _LoanScreenState extends State<LoanScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -104,54 +116,66 @@ class _LoanScreenState extends State<LoanScreen> {
                           const Spacer(),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'LOAN BALANCE',
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.7),
-                                      fontSize: 11,
-                                      letterSpacing: 1.5,
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'LOAN BALANCE',
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.7),
+                                        fontSize: 11,
+                                        letterSpacing: 1.5,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _isLoading
-                                        ? '...'
-                                        : _currencyFormat.format(_totalOutstanding),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 32,
-                                      fontWeight: FontWeight.bold,
+                                    const SizedBox(height: 4),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        _isLoading
+                                            ? '...'
+                                            : _currencyFormat.format(_totalOutstanding),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 32,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    'INTEREST DUE',
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.7),
-                                      fontSize: 11,
-                                      letterSpacing: 1.5,
+                              const SizedBox(width: 12),
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      'INTEREST DUE',
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.7),
+                                        fontSize: 11,
+                                        letterSpacing: 1.5,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _isLoading
-                                        ? '...'
-                                        : _currencyFormat.format(_totalInterestDue),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w600,
+                                    const SizedBox(height: 4),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        _isLoading
+                                            ? '...'
+                                            : _currencyFormat.format(_totalInterestDue),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -163,8 +187,47 @@ class _LoanScreenState extends State<LoanScreen> {
               ),
             ),
 
+            // Error state (never show "No Loans" when loading failed)
+            if (!_isLoading && _hasError)
+              SliverFillRemaining(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.cloud_off,
+                            size: 64, color: Colors.grey.shade400),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Couldn\'t load your loans',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A3C34),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _errorMessage,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _loadLoans,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Try Again'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
             // Active Loans
-            if (!_isLoading && activeLoans.isEmpty && repaidLoans.isEmpty)
+            if (!_isLoading && !_hasError &&
+                activeLoans.isEmpty && repaidLoans.isEmpty)
               SliverFillRemaining(
                 child: Center(
                   child: Column(
@@ -192,7 +255,7 @@ class _LoanScreenState extends State<LoanScreen> {
               ),
 
             // Active Loans Section
-            if (!_isLoading && activeLoans.isNotEmpty) ...[
+            if (!_isLoading && !_hasError && activeLoans.isNotEmpty) ...[
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -216,7 +279,7 @@ class _LoanScreenState extends State<LoanScreen> {
             ],
 
             // Repaid Loans Section
-            if (!_isLoading && repaidLoans.isNotEmpty) ...[
+            if (!_isLoading && !_hasError && repaidLoans.isNotEmpty) ...[
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
@@ -240,7 +303,7 @@ class _LoanScreenState extends State<LoanScreen> {
             ],
 
             // Loan Transactions
-            if (!_isLoading && _loanTransactions.isNotEmpty) ...[
+            if (!_isLoading && !_hasError && _loanTransactions.isNotEmpty) ...[
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
@@ -281,17 +344,12 @@ class _LoanScreenState extends State<LoanScreen> {
       color: Colors.transparent,
       child: InkWell(
         onTap: () {
-          final messenger = ScaffoldMessenger.of(context);
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => LoanDetailsScreen(loanId: loan.id),
             ),
-          ).catchError((e) {
-            messenger.showSnackBar(
-              SnackBar(content: Text('Error: $e')),
-            );
-          });
+          );
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
@@ -513,11 +571,9 @@ class _LoanScreenState extends State<LoanScreen> {
                   ),
                 ),
                 Text(
-                  '${amount >= 0 ? '+' : ''}${_currencyFormat.format(amount)}',
+                  AppFormat.signed(amount),
                   style: TextStyle(
-                    color: amount >= 0
-                        ? const Color(0xFF4CAF50)
-                        : Colors.orange,
+                    color: TxStyle.amountColor(amount),
                     fontWeight: FontWeight.bold,
                   ),
                 ),

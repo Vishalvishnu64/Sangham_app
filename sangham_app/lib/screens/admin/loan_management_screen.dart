@@ -16,6 +16,8 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
   List<LoanModel> _loans = [];
   Map<String, dynamic>? _summary;
   bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
   late TabController _tabController;
   final _currencyFormat =
       NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
@@ -34,18 +36,27 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
   }
 
   Future<void> _loadLoans() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final data = await ApiService.getAllLoans();
       final loans =
           (data['loans'] as List).map((l) => LoanModel.fromJson(l)).toList();
+      if (!mounted) return;
       setState(() {
         _loans = loans;
         _summary = data['summary'];
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -55,282 +66,409 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
       _loans.where((l) => l.status == 'repaid').toList();
 
   Future<void> _showIssueLoanDialog() async {
-    List<UserModel> members = [];
-    try {
-      final data = await ApiService.getMembers();
-      members =
-          (data['members'] as List).map((m) => UserModel.fromJson(m)).toList();
-    } catch (_) {
-      return;
-    }
-
-    if (!mounted) return;
-
     UserModel? selectedMember;
+    List<UserModel>? members;
+    String? loadError;
+
+    // Open the dialog immediately; fetch members inside it so the FAB never
+    // feels dead on slow networks.
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
+
+    Future<List<UserModel>> fetchMembers() async {
+      final data = await ApiService.getMembers();
+      return (data['members'] as List)
+          .map((m) => UserModel.fromJson(m))
+          .toList();
+    }
 
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(
-            children: [
-              Icon(Icons.account_balance, color: Color(0xFF1A5C3A)),
-              SizedBox(width: 10),
-              Text('Issue Loan',
-                  style: TextStyle(
-                      color: Color(0xFF1A3C34), fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+        builder: (ctx, setDialogState) {
+          // Kick off the fetch once, on first build of the dialog.
+          if (members == null && loadError == null) {
+            fetchMembers().then((list) {
+              if (!ctx.mounted) return;
+              setDialogState(() => members = list);
+            }).catchError((e) {
+              if (!ctx.mounted) return;
+              setDialogState(() => loadError = e.toString());
+            });
+          }
+
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
               children: [
-                // Member Dropdown
-                DropdownButtonFormField<UserModel>(
-                  initialValue: selectedMember,
-                  decoration: InputDecoration(
-                    labelText: 'Select Member',
-                    prefixIcon: const Icon(Icons.person,
-                        color: Color(0xFF1A5C3A)),
-                    filled: true,
-                    fillColor: const Color(0xFFF5F5F0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  items: members
-                      .map((m) => DropdownMenuItem(
-                            value: m,
-                            child: Text(m.name),
-                          ))
-                      .toList(),
-                  onChanged: (v) =>
-                      setDialogState(() => selectedMember = v),
-                ),
-                const SizedBox(height: 14),
-                // Amount
-                TextField(
-                  controller: amountCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Loan Amount',
-                    prefixText: '₹  ',
-                    prefixStyle: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A5C3A),
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFFF5F5F0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                // Note
-                TextField(
-                  controller: noteCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Note (optional)',
-                    prefixIcon:
-                        const Icon(Icons.note, color: Color(0xFF1A5C3A)),
-                    filled: true,
-                    fillColor: const Color(0xFFF5F5F0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
+                Icon(Icons.account_balance, color: Color(0xFF1A5C3A)),
+                SizedBox(width: 10),
+                Text('Issue Loan',
+                    style: TextStyle(
+                        color: Color(0xFF1A3C34), fontWeight: FontWeight.bold)),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (selectedMember == null || amountCtrl.text.isEmpty) {
-                  return;
-                }
-                final amount = double.tryParse(amountCtrl.text);
-                if (amount == null || amount <= 0) return;
-
-                Navigator.pop(ctx);
-                try {
-                  await ApiService.issueLoan(
-                    selectedMember!.id,
-                    amount,
-                    noteCtrl.text,
-                  );
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'Loan of ${_currencyFormat.format(amount)} issued to ${selectedMember!.name}'),
-                      backgroundColor: const Color(0xFF4CAF50),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Member Dropdown
+                  if (members == null && loadError == null)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: CircularProgressIndicator(),
+                    )
+                  else if (loadError != null)
+                    Column(
+                      children: [
+                        Icon(Icons.cloud_off,
+                            size: 40, color: Colors.grey.shade400),
+                        const SizedBox(height: 8),
+                        Text(
+                          loadError!,
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade600),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => setDialogState(() {
+                            loadError = null;
+                            members = null;
+                          }),
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    )
+                  else
+                    DropdownButtonFormField<UserModel>(
+                      initialValue: selectedMember,
+                      decoration: InputDecoration(
+                        labelText: 'Select Member',
+                        prefixIcon: const Icon(Icons.person,
+                            color: Color(0xFF1A5C3A)),
+                        filled: true,
+                        fillColor: const Color(0xFFF5F5F0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      items: members!
+                          .map((m) => DropdownMenuItem(
+                                value: m,
+                                child: Text(m.name),
+                              ))
+                          .toList(),
+                      onChanged: (v) =>
+                          setDialogState(() => selectedMember = v),
                     ),
-                  );
-                  _loadLoans();
-                } catch (e) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Failed to issue loan')),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A5C3A),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  const SizedBox(height: 14),
+                  // Amount
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Loan Amount',
+                      prefixText: '₹  ',
+                      prefixStyle: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A5C3A),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF5F5F0),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  // Note
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Note (optional)',
+                      prefixIcon:
+                          const Icon(Icons.note, color: Color(0xFF1A5C3A)),
+                      filled: true,
+                      fillColor: const Color(0xFFF5F5F0),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: const Text('Issue Loan'),
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final stateMessenger = ScaffoldMessenger.of(context);
+                  final messenger = ScaffoldMessenger.of(ctx);
+                  if (selectedMember == null ||
+                      amountCtrl.text.trim().isEmpty) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              'Select a member and enter a loan amount')),
+                    );
+                    return;
+                  }
+                  final amount = double.tryParse(amountCtrl.text.trim());
+                  if (amount == null || amount <= 0) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('Enter a valid amount')),
+                    );
+                    return;
+                  }
+                  setDialogState(() {});
+                  try {
+                    await ApiService.issueLoan(
+                      selectedMember!.id,
+                      amount,
+                      noteCtrl.text.trim(),
+                    );
+                    if (!ctx.mounted || !mounted) return;
+                    Navigator.pop(ctx);
+                    stateMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            'Loan of ${_currencyFormat.format(amount)} issued to ${selectedMember!.name}'),
+                        backgroundColor: const Color(0xFF4CAF50),
+                      ),
+                    );
+                    _loadLoans();
+                  } catch (e) {
+                    if (!ctx.mounted) return;
+                    setDialogState(() {});
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(e.toString())),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A5C3A),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Issue Loan'),
+              ),
+            ],
+          );
+        },
       ),
-    );
+    ).whenComplete(() {
+      amountCtrl.dispose();
+      noteCtrl.dispose();
+    });
   }
 
   Future<void> _showRepayDialog(LoanModel loan) async {
     final amountCtrl = TextEditingController();
+    bool isSubmitting = false;
+
+    Future<void> confirmAndPay(
+      BuildContext dialogContext,
+      StateSetter setDialogState,
+      double amount,
+      String paymentType,
+      String actionLabel,
+    ) async {
+      final messenger = ScaffoldMessenger.of(dialogContext);
+      final confirmed = await showDialog<bool>(
+        context: dialogContext,
+        builder: (_) => AlertDialog(
+          title: Text('$actionLabel?'),
+          content: Text(
+              'Record a $paymentType payment of ${_currencyFormat.format(amount)} for ${loan.userName}?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A5C3A),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
+      setDialogState(() => isSubmitting = true);
+      final ok = await _processPayment(loan.id, amount, paymentType,
+          messenger: messenger);
+      if (!dialogContext.mounted) return;
+      if (ok) Navigator.pop(dialogContext);
+      setDialogState(() => isSubmitting = false);
+    }
 
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.payments, color: Color(0xFF4CAF50)),
-            SizedBox(width: 10),
-            Text('Record Payment',
-                style: TextStyle(
-                    color: Color(0xFF1A3C34), fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Interest Section
-              if (loan.currentMonthInterest > 0) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A5C3A).withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF1A5C3A).withValues(alpha: 0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.percent, color: Color(0xFF1A5C3A), size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Monthly Interest', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text(_currencyFormat.format(loan.currentMonthInterest), style: const TextStyle(color: Color(0xFF1A5C3A), fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                      ElevatedButton(
-                        onPressed: () async {
-                          Navigator.pop(ctx);
-                          _processPayment(loan.id, loan.currentMonthInterest, 'interest');
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A5C3A),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                        child: const Text('Pay Interest'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => PopScope(
+          canPop: !isSubmitting,
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.payments, color: Color(0xFF4CAF50)),
+                SizedBox(width: 10),
+                Text('Record Payment',
+                    style: TextStyle(
+                        color: Color(0xFF1A3C34), fontWeight: FontWeight.bold)),
               ],
-              
-              // Principal Section
-              const Text('Pay Loan Principal', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              const SizedBox(height: 4),
-              Text('Remaining: ${_currencyFormat.format(loan.remainingPrincipal)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: amountCtrl,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: 'Enter principal amount',
-                  prefixText: '₹  ',
-                  prefixStyle: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange,
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Interest Section
+                  if (loan.currentMonthInterest > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A5C3A).withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF1A5C3A).withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.percent, color: Color(0xFF1A5C3A), size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Monthly Interest', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                Text(_currencyFormat.format(loan.currentMonthInterest), style: const TextStyle(color: Color(0xFF1A5C3A), fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: isSubmitting
+                                ? null
+                                : () => confirmAndPay(ctx, setDialogState,
+                                    loan.currentMonthInterest, 'interest', 'Pay Interest'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1A5C3A),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            child: isSubmitting
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Text('Pay Interest'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                  ],
+
+                  // Principal Section
+                  const Text('Pay Loan Principal', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Text('Remaining: ${_currencyFormat.format(loan.remainingPrincipal)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountCtrl,
+                    keyboardType: TextInputType.number,
+                    enabled: !isSubmitting,
+                    decoration: InputDecoration(
+                      hintText: 'Enter principal amount',
+                      prefixText: '₹  ',
+                      prefixStyle: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange,
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF5F5F0),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
                   ),
-                  filled: true,
-                  fillColor: const Color(0xFFF5F5F0),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: isSubmitting
+                          ? null
+                          : () {
+                              final amount =
+                                  double.tryParse(amountCtrl.text.trim());
+                              if (amount == null || amount <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content:
+                                          Text('Enter valid principal amount')),
+                                );
+                                return;
+                              }
+                              if (amount > loan.remainingPrincipal) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text(
+                                          'Amount exceeds principal (${_currencyFormat.format(loan.remainingPrincipal)})')),
+                                );
+                                return;
+                              }
+                              confirmAndPay(ctx, setDialogState, amount,
+                                  'principal', 'Pay Principal');
+                            },
+                      icon: isSubmitting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.payments, size: 18),
+                      label: const Text('Pay Principal'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    final amount = double.tryParse(amountCtrl.text);
-                    if (amount == null || amount <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Enter valid principal amount')),
-                      );
-                      return;
-                    }
-                    if (amount > loan.remainingPrincipal) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Amount exceeds principal (${_currencyFormat.format(loan.remainingPrincipal)})')),
-                      );
-                      return;
-                    }
-                    Navigator.pop(ctx);
-                    _processPayment(loan.id, amount, 'principal');
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('Pay Principal'),
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                child: const Text('Close'),
               ),
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
       ),
-    );
+    ).whenComplete(() => amountCtrl.dispose());
   }
 
-  Future<void> _processPayment(String loanId, double amount, String paymentType) async {
+  /// Returns true when the payment was recorded successfully.
+  Future<bool> _processPayment(String loanId, double amount, String paymentType,
+      {required ScaffoldMessengerState messenger}) async {
     try {
       final result = await ApiService.repayLoan(
         loanId,
@@ -338,26 +476,29 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
         paymentType: paymentType,
       );
 
-      if (!mounted) return;
+      if (!mounted) return false;
 
       if (result['repaymentSummary'] != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? 'Payment recorded successfully'),
             backgroundColor: const Color(0xFF4CAF50),
           ),
         );
         _loadLoans();
+        return true;
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(result['message'] ?? 'Payment failed')),
         );
+        return false;
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return false;
+      messenger.showSnackBar(
         SnackBar(content: Text(e.toString())),
       );
+      return false;
     }
   }
 
@@ -392,7 +533,41 @@ class _LoanManagementScreenState extends State<LoanManagementScreen>
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
+          : _hasError
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.cloud_off,
+                            size: 64, color: Colors.grey.shade400),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Couldn\'t load loans',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A3C34),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _errorMessage,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _loadLoans,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Try Again'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
               onRefresh: _loadLoans,
               child: Column(
                 children: [

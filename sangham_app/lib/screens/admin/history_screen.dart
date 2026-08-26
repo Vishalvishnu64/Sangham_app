@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
+import '../../utils/transaction_style.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -12,8 +13,6 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   List<dynamic> _transactions = [];
   bool _isLoading = true;
-  final _currencyFormat =
-      NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
   final _dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
 
   @override
@@ -55,9 +54,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
               onRefresh: _loadHistory,
               child: _transactions.isEmpty
                   ? ListView(
-                      children: const [
-                        SizedBox(height: 100),
-                        Center(
+                      children: [
+                        const SizedBox(height: 120),
+                        Icon(Icons.receipt_long_rounded,
+                            size: 64, color: Colors.grey.shade300),
+                        const SizedBox(height: 16),
+                        const Center(
                           child: Text(
                             'No transactions found.',
                             style: TextStyle(fontSize: 16, color: Colors.grey),
@@ -74,25 +76,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         final date = DateTime.tryParse(t['date'] ?? '');
                         final type = t['type'] ?? 'contribution';
                         final note = t['note'] ?? '';
-                        
+
                         final userMap = t['userId'] as Map<String, dynamic>?;
                         final memberName = userMap?['name'] ?? 'Unknown Member';
-
-                        IconData icon;
-                        Color iconColor;
-                        switch (type) {
-                          case 'loan':
-                            icon = Icons.account_balance;
-                            iconColor = Colors.orange;
-                            break;
-                          case 'penalty':
-                            icon = Icons.warning;
-                            iconColor = Colors.red;
-                            break;
-                          default:
-                            icon = Icons.payments;
-                            iconColor = const Color(0xFF4CAF50);
-                        }
+                        final style = TxStyle.of(type);
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
@@ -113,10 +100,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: iconColor.withValues(alpha: 0.1),
+                                  color: style.color.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Icon(icon, color: iconColor, size: 24),
+                                child:
+                                    Icon(style.icon, color: style.color, size: 24),
                               ),
                               const SizedBox(width: 16),
                               Expanded(
@@ -154,9 +142,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 ),
                               ),
                               Text(
-                                '+${_currencyFormat.format(amount)}',
+                                AppFormat.signed(amount),
                                 style: TextStyle(
-                                  color: iconColor,
+                                  color: TxStyle.amountColor(amount),
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                 ),

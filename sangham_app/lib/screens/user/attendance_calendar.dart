@@ -19,6 +19,9 @@ class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
   int _totalAbsent = 0;
   int _consistency = 0;
   bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
+  int _requestToken = 0;
 
   @override
   void initState() {
@@ -27,13 +30,20 @@ class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
   }
 
   Future<void> _loadAttendance() async {
-    setState(() => _isLoading = true);
+    final token = ++_requestToken;
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final data = await ApiService.getUserAttendance(
         widget.userId,
         month: _focusedDay.month,
         year: _focusedDay.year,
       );
+
+      // Discard stale responses when the user pages months quickly.
+      if (!mounted || token != _requestToken) return;
 
       final records = data['records'] as List? ?? [];
       final map = <DateTime, String>{};
@@ -53,7 +63,12 @@ class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (!mounted || token != _requestToken) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -67,10 +82,44 @@ class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
+          : _hasError
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.cloud_off,
+                            size: 64, color: Colors.grey.shade400),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Couldn\'t load attendance',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A3C34),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _errorMessage,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _loadAttendance,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Try Again'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
                   // Consistency Card
                   Container(
                     width: double.infinity,
@@ -163,22 +212,57 @@ class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
                           if (status != null) {
                             return Positioned(
                               bottom: 4,
-                              child: Container(
-                                width: 7,
-                                height: 7,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: status == 'present'
-                                      ? const Color(0xFF4CAF50)
-                                      : const Color(0xFFE53935),
-                                ),
-                              ),
+                              child: status == 'present'
+                                  ? Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Color(0xFF4CAF50),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 9,
+                                      height: 9,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFFE53935),
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
                             );
                           }
                           return null;
                         },
                       ),
                     ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Legend (color + shape so it works for everyone)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.circle, size: 12, color: Color(0xFF4CAF50)),
+                      const SizedBox(width: 6),
+                      const Text('Present',
+                          style: TextStyle(fontSize: 12, color: Colors.black87)),
+                      const SizedBox(width: 24),
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFFE53935), width: 2),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text('Absent',
+                          style: TextStyle(fontSize: 12, color: Colors.black87)),
+                    ],
                   ),
 
                   const SizedBox(height: 16),

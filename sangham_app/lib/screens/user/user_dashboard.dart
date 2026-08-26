@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../utils/transaction_style.dart';
 import '../auth/login_screen.dart';
+import 'passbook_screen.dart';
 
 class UserDashboardScreen extends StatefulWidget {
   final String userId;
@@ -16,6 +18,7 @@ class UserDashboardScreen extends StatefulWidget {
 class _UserDashboardScreenState extends State<UserDashboardScreen> {
   Map<String, dynamic>? _data;
   bool _isLoading = true;
+  bool _hasError = false;
   final _currencyFormat =
       NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
@@ -26,15 +29,23 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   }
 
   Future<void> _loadDashboard() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final data = await ApiService.getUserDashboard(widget.userId);
+      if (!mounted) return;
       setState(() {
         _data = data;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
     }
   }
 
@@ -44,7 +55,9 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0),
-      body: RefreshIndicator(
+      body: _hasError && !_isLoading
+          ? _buildErrorView()
+          : RefreshIndicator(
         onRefresh: _loadDashboard,
         child: CustomScrollView(
           slivers: [
@@ -56,11 +69,37 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
               automaticallyImplyLeading: false,
               actions: [
                 IconButton(
+                  tooltip: 'Logout',
                   icon: const Icon(Icons.logout),
                   onPressed: () async {
+                    final navigator = Navigator.of(context);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Logout?'),
+                        content:
+                            const Text('Are you sure you want to logout?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFE53935),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Logout'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !mounted) return;
                     await auth.logout();
-                    if (!context.mounted) return;
-                    Navigator.of(context).pushReplacement(
+                    if (!mounted) return;
+                    navigator.pushReplacement(
                       MaterialPageRoute(builder: (_) => const LoginScreen()),
                     );
                   },
@@ -226,6 +265,31 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     );
   }
 
+  Widget _buildErrorView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 56, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          Text(
+            'Couldn\'t load your dashboard',
+            style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 4),
+          Text('Check your internet connection',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _loadDashboard,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRecentTransactions() {
     final transactions =
         (_data?['recentTransactions'] as List<dynamic>?) ?? [];
@@ -246,10 +310,10 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              const Text(
                 'Recent Transactions',
                 style: TextStyle(
                   fontSize: 16,
@@ -257,12 +321,24 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                   color: Color(0xFF1A3C34),
                 ),
               ),
-              Text(
-                'View All →',
-                style: TextStyle(
-                  color: Color(0xFF1A5C3A),
-                  fontWeight: FontWeight.w500,
-                  fontSize: 13,
+              InkWell(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PassbookScreen(userId: widget.userId),
+                  ),
+                ),
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Text(
+                    'View All →',
+                    style: TextStyle(
+                      color: Color(0xFF1A5C3A),
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -283,22 +359,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
               final date = DateTime.tryParse(t['date'] ?? '');
               final type = t['type'] ?? 'contribution';
               final note = t['note'] ?? '';
-
-              IconData icon;
-              Color iconColor;
-              switch (type) {
-                case 'loan':
-                  icon = Icons.account_balance;
-                  iconColor = Colors.orange;
-                  break;
-                case 'penalty':
-                  icon = Icons.warning;
-                  iconColor = Colors.red;
-                  break;
-                default:
-                  icon = Icons.payments;
-                  iconColor = const Color(0xFF4CAF50);
-              }
+              final style = TxStyle.of(type);
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
@@ -313,10 +374,10 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: iconColor.withValues(alpha: 0.1),
+                        color: style.color.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(icon, color: iconColor, size: 20),
+                      child: Icon(style.icon, color: style.color, size: 20),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -324,7 +385,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            note.isNotEmpty ? note : type,
+                            note.isNotEmpty ? note : style.label,
                             style: const TextStyle(
                               fontWeight: FontWeight.w500,
                               fontSize: 13,
@@ -340,9 +401,9 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                       ),
                     ),
                     Text(
-                      '+${_currencyFormat.format(amount)}',
+                      AppFormat.signed(amount),
                       style: TextStyle(
-                        color: iconColor,
+                        color: TxStyle.amountColor(amount),
                         fontWeight: FontWeight.bold,
                       ),
                     ),

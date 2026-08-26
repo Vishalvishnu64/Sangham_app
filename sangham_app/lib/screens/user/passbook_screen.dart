@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
 import '../../models/transaction_model.dart';
+import '../../utils/transaction_style.dart';
 
 class PassbookScreen extends StatefulWidget {
   final String userId;
@@ -15,6 +16,7 @@ class _PassbookScreenState extends State<PassbookScreen> {
   List<TransactionModel> _passbook = [];
   double _currentBalance = 0;
   bool _isLoading = true;
+  bool _hasError = false;
   final _currencyFormat =
       NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
 
@@ -25,19 +27,27 @@ class _PassbookScreenState extends State<PassbookScreen> {
   }
 
   Future<void> _loadPassbook() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final data = await ApiService.getUserTransactions(widget.userId);
       final passbook = (data['passbook'] as List)
           .map((t) => TransactionModel.fromJson(t))
           .toList();
+      if (!mounted) return;
       setState(() {
         _passbook = passbook;
         _currentBalance = (data['currentBalance'] ?? 0).toDouble();
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
     }
   }
 
@@ -71,11 +81,13 @@ class _PassbookScreenState extends State<PassbookScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadPassbook,
-              child: _passbook.isEmpty
-                  ? const Center(child: Text('No transactions yet'))
-                  : ListView.builder(
+          : _hasError
+              ? _buildErrorView()
+              : RefreshIndicator(
+                  onRefresh: _loadPassbook,
+                  child: _passbook.isEmpty
+                      ? _buildEmptyView()
+                      : ListView.builder(
                       padding: const EdgeInsets.all(16),
                       itemCount: _passbook.length,
                       itemBuilder: (_, i) {
@@ -159,9 +171,9 @@ class _PassbookScreenState extends State<PassbookScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    '+${_currencyFormat.format(txn.amount)}',
-                                    style: const TextStyle(
-                                      color: Color(0xFF4CAF50),
+                                    AppFormat.signed(txn.amount),
+                                    style: TextStyle(
+                                      color: TxStyle.amountColor(txn.amount),
                                       fontWeight: FontWeight.bold,
                                       fontSize: 14,
                                     ),
@@ -181,7 +193,51 @@ class _PassbookScreenState extends State<PassbookScreen> {
                         );
                       },
                     ),
-            ),
+              ),
+    );
+  }
+
+  Widget _buildEmptyView() {
+    return ListView(
+      children: [
+        const SizedBox(height: 120),
+        Icon(Icons.receipt_long_rounded, size: 64, color: Colors.grey.shade300),
+        const SizedBox(height: 16),
+        Center(
+          child: Text(
+            'No transactions yet',
+            style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+          ),
+        ),
+        Center(
+          child: Text(
+            'Your contributions and payments will appear here',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildErrorView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 56, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          Text(
+            'Couldn\'t load your passbook',
+            style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _loadPassbook,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
     );
   }
 }

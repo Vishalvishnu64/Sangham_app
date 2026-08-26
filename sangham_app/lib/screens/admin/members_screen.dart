@@ -12,6 +12,8 @@ class MembersScreen extends StatefulWidget {
 class _MembersScreenState extends State<MembersScreen> {
   List<UserModel> _members = [];
   bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
   String _searchQuery = '';
 
   @override
@@ -21,18 +23,27 @@ class _MembersScreenState extends State<MembersScreen> {
   }
 
   Future<void> _loadMembers() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
     try {
       final data = await ApiService.getMembers();
       final list = (data['members'] as List)
           .map((m) => UserModel.fromJson(m))
           .toList();
+      if (!mounted) return;
       setState(() {
         _members = list;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -49,12 +60,14 @@ class _MembersScreenState extends State<MembersScreen> {
     final nameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
+    bool isSubmitting = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Container(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(ctx).viewInsets.bottom,
           left: 24,
@@ -98,43 +111,76 @@ class _MembersScreenState extends State<MembersScreen> {
               _buildField(phoneCtrl, 'Phone Number', Icons.phone,
                   keyboardType: TextInputType.phone),
               const SizedBox(height: 14),
-              _buildField(passwordCtrl, 'Password (optional)', Icons.lock),
+              _buildField(passwordCtrl, 'Password (optional)', Icons.lock,
+                  obscureText: true),
+              const SizedBox(height: 4),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  'Leave empty to use the last 4 digits of the phone number.',
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: () async {
-                    if (nameCtrl.text.isEmpty || phoneCtrl.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Name and phone required')),
-                      );
-                      return;
-                    }
-                    await ApiService.addMember(
-                      nameCtrl.text,
-                      phoneCtrl.text,
-                      passwordCtrl.text.isEmpty
-                          ? phoneCtrl.text.substring(phoneCtrl.text.length - 4)
-                          : passwordCtrl.text,
-                    );
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    _loadMembers();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Member added successfully!'),
-                        backgroundColor: Color(0xFF4CAF50),
-                      ),
-                    );
-                  },
-                  child: const Text('Add Member'),
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final name = nameCtrl.text.trim();
+                          final phone = phoneCtrl.text.trim();
+                          if (name.isEmpty || phone.isEmpty) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text('Name and phone are required')),
+                            );
+                            return;
+                          }
+                          setModalState(() => isSubmitting = true);
+                          try {
+                            await ApiService.addMember(
+                              name,
+                              phone,
+                              passwordCtrl.text.trim().isEmpty
+                                  ? phone.substring(phone.length - 4)
+                                  : passwordCtrl.text.trim(),
+                            );
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+                            _loadMembers();
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Member added successfully!'),
+                                backgroundColor: Color(0xFF4CAF50),
+                              ),
+                            );
+                          } catch (e) {
+                            setModalState(() => isSubmitting = false);
+                            if (!ctx.mounted) return;
+                            messenger.showSnackBar(
+                              SnackBar(content: Text(e.toString())),
+                            );
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Add Member'),
                 ),
               ),
               const SizedBox(height: 24),
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -198,12 +244,13 @@ class _MembersScreenState extends State<MembersScreen> {
                       height: 50,
                       child: OutlinedButton(
                         onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
                           final confirm = await showDialog<bool>(
                             context: context,
                             builder: (_) => AlertDialog(
                               title: const Text('Remove Member?'),
                               content: Text(
-                                  'Are you sure you want to remove ${member.name}?'),
+                                  'Are you sure you want to remove ${member.name}? This cannot be undone.'),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(context, false),
@@ -218,10 +265,23 @@ class _MembersScreenState extends State<MembersScreen> {
                             ),
                           );
                           if (confirm == true) {
-                            await ApiService.deleteMember(member.id);
-                            if (!ctx.mounted) return;
-                            Navigator.pop(ctx);
-                            _loadMembers();
+                            try {
+                              await ApiService.deleteMember(member.id);
+                              if (!ctx.mounted) return;
+                              Navigator.pop(ctx);
+                              _loadMembers();
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text('${member.name} removed'),
+                                  backgroundColor: const Color(0xFF4CAF50),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!ctx.mounted) return;
+                              messenger.showSnackBar(
+                                SnackBar(content: Text(e.toString())),
+                              );
+                            }
                           }
                         },
                         style: OutlinedButton.styleFrom(
@@ -241,14 +301,38 @@ class _MembersScreenState extends State<MembersScreen> {
                       height: 50,
                       child: ElevatedButton(
                         onPressed: () async {
-                          await ApiService.updateMember(
-                            member.id,
-                            nameCtrl.text,
-                            phoneCtrl.text,
-                          );
-                          if (!ctx.mounted) return;
-                          Navigator.pop(ctx);
-                          _loadMembers();
+                          final messenger = ScaffoldMessenger.of(context);
+                          final name = nameCtrl.text.trim();
+                          final phone = phoneCtrl.text.trim();
+                          if (name.isEmpty || phone.isEmpty) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text('Name and phone are required')),
+                            );
+                            return;
+                          }
+                          try {
+                            await ApiService.updateMember(
+                              member.id,
+                              name,
+                              phone,
+                            );
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+                            _loadMembers();
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Changes saved'),
+                                backgroundColor: Color(0xFF4CAF50),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!ctx.mounted) return;
+                            messenger.showSnackBar(
+                              SnackBar(content: Text(e.toString())),
+                            );
+                          }
                         },
                         child: const Text('Save'),
                       ),
@@ -265,7 +349,7 @@ class _MembersScreenState extends State<MembersScreen> {
   }
 
   void _showAddMoneyDialog(UserModel member) {
-    final amountCtrl = TextEditingController(text: '100');
+    final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
     bool isSubmitting = false;
 
@@ -329,9 +413,10 @@ class _MembersScreenState extends State<MembersScreen> {
                     onPressed: isSubmitting
                         ? null
                         : () async {
+                            final messenger = ScaffoldMessenger.of(context);
                             final amount = double.tryParse(amountCtrl.text);
                             if (amount == null || amount <= 0) {
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 const SnackBar(content: Text('Enter a valid amount')),
                               );
                               return;
@@ -343,7 +428,7 @@ class _MembersScreenState extends State<MembersScreen> {
                               if (!ctx.mounted) return;
                               Navigator.pop(ctx);
                               _loadMembers();
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 const SnackBar(
                                   content: Text('Money added successfully!'),
                                   backgroundColor: Color(0xFF4CAF50),
@@ -352,8 +437,8 @@ class _MembersScreenState extends State<MembersScreen> {
                             } catch (e) {
                               setModalState(() => isSubmitting = false);
                               if (!ctx.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Failed to add money')),
+                              messenger.showSnackBar(
+                                SnackBar(content: Text(e.toString())),
                               );
                             }
                           },
@@ -376,10 +461,11 @@ class _MembersScreenState extends State<MembersScreen> {
   }
 
   Widget _buildField(TextEditingController ctrl, String label, IconData icon,
-      {TextInputType? keyboardType}) {
+      {TextInputType? keyboardType, bool obscureText = false}) {
     return TextField(
       controller: ctrl,
       keyboardType: keyboardType,
+      obscureText: obscureText,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: const Color(0xFF1A5C3A)),
@@ -434,18 +520,16 @@ class _MembersScreenState extends State<MembersScreen> {
           // Member count
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${_filteredMembers.length} Members',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey,
-                  ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${_filteredMembers.length} Members',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
                 ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -453,9 +537,85 @@ class _MembersScreenState extends State<MembersScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: _loadMembers,
-                    child: ListView.builder(
+                : _hasError
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.cloud_off,
+                                  size: 64, color: Colors.grey.shade400),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Couldn\'t load members',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1A3C34),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _errorMessage,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey.shade600),
+                              ),
+                              const SizedBox(height: 20),
+                              ElevatedButton.icon(
+                                onPressed: _loadMembers,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Try Again'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _filteredMembers.isEmpty
+                        ? RefreshIndicator(
+                            onRefresh: _loadMembers,
+                            child: ListView(
+                              children: [
+                                SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height * 0.4,
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.group_off,
+                                            size: 64,
+                                            color: Colors.grey.shade300),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          _searchQuery.isEmpty
+                                              ? 'No members yet'
+                                              : 'No members match your search',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF1A3C34),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          _searchQuery.isEmpty
+                                              ? 'Tap + to add your first member'
+                                              : 'Try a different name or phone',
+                                          style:
+                                              TextStyle(color: Colors.grey.shade600),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: _loadMembers,
+                            child: ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: _filteredMembers.length,
                       itemBuilder: (_, i) {
@@ -523,11 +683,11 @@ class _MembersScreenState extends State<MembersScreen> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 4),
                                 IconButton(
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  icon: const Icon(Icons.add_circle, color: Color(0xFF1A5C3A), size: 32),
+                                  tooltip: 'Add money',
+                                  icon: const Icon(Icons.add_circle,
+                                      color: Color(0xFF1A5C3A), size: 28),
                                   onPressed: () => _showAddMoneyDialog(member),
                                 ),
                               ],
