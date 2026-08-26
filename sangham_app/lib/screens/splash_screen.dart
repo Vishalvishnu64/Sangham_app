@@ -38,13 +38,18 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _initializeApp() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
-    
-    // Wait for the auth provider to load and wait 2 seconds concurrently
-    await Future.wait([
-      auth.init(),
-      Future.delayed(const Duration(seconds: 2)),
-    ]);
-    
+
+    // Wait for the auth provider to load and wait 2 seconds concurrently.
+    // Guarded so a failure can never leave the user stuck on the splash.
+    try {
+      await Future.wait([
+        auth.init(),
+        Future.delayed(const Duration(seconds: 2)),
+      ]);
+    } catch (_) {
+      // Fall through and navigate with whatever state we have.
+    }
+
     if (mounted) {
       _navigate();
     }

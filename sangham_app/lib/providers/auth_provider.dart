@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
@@ -18,10 +20,22 @@ class AuthProvider extends ChangeNotifier {
 
   AuthProvider() {
     // Constructor does not load auth automatically anymore. We will call init() explicitly.
+    // React to server-side session rejection (expired/revoked token) globally.
+    ApiService.onUnauthorized = _handleUnauthorized;
   }
 
   Future<void> init() async {
     await _loadSavedAuth();
+    if (_token != null) {
+      // Validate the stored token against the server. If the network is slow
+      // or unreachable we keep the cached session rather than blocking the
+      // splash screen indefinitely; subsequent API calls will surface errors.
+      try {
+        await _validateSession().timeout(const Duration(seconds: 10));
+      } catch (_) {
+        // Validation unavailable (offline/slow) – proceed with cached auth.
+      }
+    }
   }
 
   Future<void> _loadSavedAuth() async {
@@ -43,6 +57,48 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Re-checks the saved token with GET /auth/me and refreshes profile data.
+  Future<void> _validateSession() async {
+    try {
+      final response = await ApiService.getCurrentUser();
+      final userData = response['user'];
+      if (userData is Map) {
+        _user = UserModel.fromJson(Map<String, dynamic>.from(userData));
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userId', _user!.id);
+        await prefs.setString('userName', _user!.name);
+        await prefs.setString('userPhone', _user!.phone);
+        await prefs.setString('userRole', _user!.role);
+        notifyListeners();
+      }
+    } on ApiException catch (e) {
+      if (e.isAuthError) {
+        // Session was already cleared by the onUnauthorized hook.
+        return;
+      }
+      // Server/network problem: keep cached session for offline start.
+    } catch (_) {
+      // Keep cached session; do not log users out for transient failures.
+    }
+  }
+
+  void _handleUnauthorized() {
+    if (_token == null && _user == null) return;
+    _clearLocalAuth();
+  }
+
+  Future<void> _clearLocalAuth() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+    await prefs.remove('userId');
+    await prefs.remove('userName');
+    await prefs.remove('userPhone');
+    await prefs.remove('userRole');
+    _user = null;
+    _token = null;
+    notifyListeners();
+  }
+
   Future<bool> login(String phone, String password) async {
     _isLoading = true;
     _error = null;
@@ -52,9 +108,9 @@ class AuthProvider extends ChangeNotifier {
       final response = await ApiService.login(phone, password);
 
       if (response.containsKey('token')) {
-        _token = response['token'];
+        _token = response['token'] as String?;
         final userData = response['user'];
-        _user = UserModel.fromJson(userData);
+        _user = UserModel.fromJson(Map<String, dynamic>.from(userData));
 
         // Save to local storage
         final prefs = await SharedPreferences.getInstance();
@@ -73,8 +129,13 @@ class AuthProvider extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+    } on ApiException catch (e) {
+      _error = e.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
     } catch (e) {
-      _error = 'Connection error. Check your network.';
+      _error = 'Something went wrong. Please try again.';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -100,8 +161,13 @@ class AuthProvider extends ChangeNotifier {
         notifyListeners();
         return false;
       }
+    } on ApiException catch (e) {
+      _error = e.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
     } catch (e) {
-      _error = 'Connection error. Check your network.';
+      _error = 'Something went wrong. Please try again.';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -109,10 +175,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    _user = null;
-    _token = null;
-    notifyListeners();
+    await _clearLocalAuth();
   }
 }
