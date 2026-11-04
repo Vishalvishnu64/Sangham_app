@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const express = require('express');
 const Transaction = require('../models/Transaction');
 const AuditLog = require('../models/AuditLog');
@@ -25,7 +26,13 @@ router.post('/bulk', auth, adminOnly, async (req, res) => {
   try {
     const { amount, memberIds, type, note, date } = req.body;
 
-    // If no memberIds provided, apply to all active members
+    if (!Number.isSafeInteger(amount) || amount <= 0 || !Array.isArray(memberIds) || memberIds.length === 0 || memberIds.length > 500 || new Set(memberIds).size !== memberIds.length || memberIds.some(id => !mongoose.isObjectIdOrHexString(id)) || (type && type !== 'contribution')) {
+      return res.status(400).json({ message: 'Positive whole-rupee amount and unique selected members required' });
+    }
+    if (await User.countDocuments({ _id: { $in: memberIds }, role: 'user', isActive: true }) !== memberIds.length) {
+      return res.status(400).json({ message: 'All selected members must be active' });
+    }
+    // Explicitly selected, validated members only
     let targetIds = memberIds;
     if (!targetIds || targetIds.length === 0) {
       const allMembers = await User.find({ role: 'user', isActive: true }).select('_id');
@@ -57,6 +64,10 @@ router.post('/', auth, adminOnly, async (req, res) => {
   try {
     const { userId, amount, type, note, date } = req.body;
 
+    if (!mongoose.isObjectIdOrHexString(userId) || !Number.isSafeInteger(amount) || amount <= 0 || !['contribution', 'penalty', 'withdrawal'].includes(type || 'contribution')) {
+      return res.status(400).json({ message: 'Invalid member, amount or manual receipt type' });
+    }
+    if (!await User.exists({ _id: userId, role: 'user', isActive: true })) return res.status(404).json({ message: 'Active member not found' });
     const transaction = new Transaction({
       userId,
       amount,
@@ -133,13 +144,19 @@ router.get('/user/:userId', auth, async (req, res) => {
       .sort({ date: -1 })
       .limit(100);
 
-    // Calculate running balance
+    // Calculate running balance.
+    // Personal (savings) balance = contributions only. Loan disbursements,
+    // repayments, interest, penalties and withdrawals belong to the whole
+    // group fund, so they are still listed below for transparency but do not
+    // move the member's own running balance.
     const allTransactions = await Transaction.find({ userId: req.params.userId })
       .sort({ date: 1 });
 
     let runningBalance = 0;
     const passbook = allTransactions.map(t => {
-      runningBalance += t.amount;
+      if (t.type === 'contribution') {
+        runningBalance += t.amount;
+      }
       return {
         ...t.toObject(),
         runningBalance
@@ -157,63 +174,13 @@ router.get('/user/:userId', auth, async (req, res) => {
 });
 
 // PUT /api/transactions/:id - Edit transaction (admin, with audit log)
-router.put('/:id', auth, adminOnly, async (req, res) => {
-  try {
-    const transaction = await Transaction.findById(req.params.id);
-    if (!transaction) {
-      return res.status(404).json({ message: 'Transaction not found' });
-    }
-
-    const oldValue = {
-      amount: transaction.amount,
-      type: transaction.type,
-      note: transaction.note
-    };
-
-    const { amount, type, note } = req.body;
-    if (amount !== undefined) transaction.amount = amount;
-    if (type) transaction.type = type;
-    if (note !== undefined) transaction.note = note;
-    await transaction.save();
-
-    // Audit log for transparency
-    await AuditLog.create({
-      action: 'edit',
-      entity: 'transaction',
-      entityId: transaction._id,
-      oldValue,
-      newValue: { amount: transaction.amount, type: transaction.type, note: transaction.note },
-      performedBy: req.user._id
-    });
-
-    res.json({ message: 'Transaction updated', transaction });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
+router.put('/:id', auth, adminOnly, (req, res) => {
+  res.status(409).json({ message: 'Posted receipts cannot be changed; contact the administrator for reconciliation.' });
 });
 
 // DELETE /api/transactions/:id - Delete transaction (admin)
-router.delete('/:id', auth, adminOnly, async (req, res) => {
-  try {
-    const transaction = await Transaction.findById(req.params.id);
-    if (!transaction) {
-      return res.status(404).json({ message: 'Transaction not found' });
-    }
-
-    // Audit log
-    await AuditLog.create({
-      action: 'delete',
-      entity: 'transaction',
-      entityId: transaction._id,
-      oldValue: transaction.toObject(),
-      performedBy: req.user._id
-    });
-
-    await Transaction.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Transaction deleted' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
+router.delete('/:id', auth, adminOnly, (req, res) => {
+  res.status(409).json({ message: 'Posted receipts cannot be changed; contact the administrator for reconciliation.' });
 });
 
 // GET /api/transactions/weekly-status - Who paid / who didn't this week

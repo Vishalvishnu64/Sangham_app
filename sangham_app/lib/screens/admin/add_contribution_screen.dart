@@ -98,9 +98,9 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Confirm Contribution'),
         content: Text(
-          'Record $_currencyFormat.format(amount) for '
+          'Record ${_currencyFormat.format(amount)} for '
           '${_selectAll ? "ALL ${_members.length} members" : "${_selectedIds.length} selected member(s)"}?\n\n'
-          'Total: $_currencyFormat.format(amount * (_selectAll ? _members.length : _selectedIds.length))',
+          'Total: ${_currencyFormat.format(amount * _selectedIds.length)}',
         ),
         actions: [
           TextButton(
@@ -124,7 +124,7 @@ class _AddContributionScreenState extends State<AddContributionScreen> {
     try {
       final result = await ApiService.addBulkContribution(
         amount,
-        _selectAll ? null : _selectedIds.toList(),
+        _selectedIds.toList(),
         _noteCtrl.text.trim(),
       );
       if (!mounted) return;

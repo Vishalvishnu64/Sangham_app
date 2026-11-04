@@ -1,3 +1,4 @@
+if (process.env.NODE_ENV !== 'test' || process.env.ALLOW_DESTRUCTIVE_TEST_SEED !== 'yes' || !/^mongodb:\/\/(127\.0\.0\.1|localhost):[0-9]+\/sangham_test/.test(process.env.MONGO_URI || '')) { throw new Error('Seeding requires an explicitly authorized disposable local test database'); }
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('./models/User');

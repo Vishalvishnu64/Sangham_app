@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
 
@@ -488,7 +490,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
   /// The FAB must only exist once real loan data has loaded – otherwise a tap
   /// would hit a null assertion. Hidden entirely while loading/errored/repaid.
   bool _canRepay() {
-    if (_currentLoan == null) return false;
+    if (!context.read<AuthProvider>().isAdmin || _currentLoan == null) return false;
     final status = (_currentLoan!['status'] as String?)?.toLowerCase();
     return status != 'repaid';
   }

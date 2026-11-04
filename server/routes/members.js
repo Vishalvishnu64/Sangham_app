@@ -13,11 +13,14 @@ router.get('/', auth, adminOnly, async (req, res) => {
       .select('-password')
       .sort({ name: 1 });
 
-    // Calculate balance for each member from transactions
+    // Calculate balance for each member from transactions.
+    // Personal (savings) balance = contributions only. Loan disbursements,
+    // repayments, interest, penalties and withdrawals come out of / go into
+    // the whole group fund, so they must not move a member's own balance.
     const membersWithBalance = await Promise.all(
       members.map(async (member) => {
         const result = await Transaction.aggregate([
-          { $match: { userId: member._id } },
+          { $match: { userId: member._id, type: 'contribution' } },
           { $group: { _id: null, total: { $sum: '$amount' } } }
         ]);
         const balance = result.length > 0 ? result[0].total : 0;
@@ -36,6 +39,9 @@ router.post('/', auth, adminOnly, async (req, res) => {
   try {
     const { name, phone, password } = req.body;
 
+    if (typeof name !== 'string' || !name.trim() || typeof phone !== 'string' || !/^[6-9][0-9]{9}$/.test(phone) || typeof password !== 'string' || password.length < 15 || Buffer.byteLength(password) > 72) {
+      return res.status(400).json({ message: 'Name, valid mobile number and a passphrase of at least 15 characters required' });
+    }
     const existing = await User.findOne({ phone });
     if (existing) {
       return res.status(400).json({ message: 'Phone number already registered' });
@@ -44,7 +50,7 @@ router.post('/', auth, adminOnly, async (req, res) => {
     const user = new User({
       name,
       phone,
-      password: password || phone.slice(-4), // Default password = last 4 digits of phone
+      password,
       role: 'user'
     });
     await user.save();

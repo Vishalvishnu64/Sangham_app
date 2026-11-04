@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { auth } = require('../middleware/auth');
+const { auth, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -9,16 +9,16 @@ const router = express.Router();
 // Admins are provisioned via seed script or direct DB access only.
 // NOTE: 'role' is intentionally NOT read from the request body to prevent
 // privilege escalation.
-router.post('/register', async (req, res) => {
+router.post('/register', auth, adminOnly, async (req, res) => {
   try {
     const { name, phone, password } = req.body;
 
-    if (!name || !name.trim() || !phone || !phone.trim() || !password) {
+    if (typeof name !== 'string' || !name.trim() || typeof phone !== 'string' || !/^[6-9][0-9]{9}$/.test(phone) || typeof password !== 'string') {
       return res.status(400).json({ message: 'Name, phone and password are required' });
     }
 
-    if (String(password).length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    if (password.length < 15 || Buffer.byteLength(password) > 72) {
+      return res.status(400).json({ message: 'Password must be 15 or more characters within 72 UTF-8 bytes' });
     }
 
     // Check if phone already exists
@@ -49,6 +49,9 @@ router.post('/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
 
+    if (typeof phone !== 'string' || !/^[6-9][0-9]{9}$/.test(phone) || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Valid phone and password required' });
+    }
     // Soft-deleted members must not be able to obtain new tokens.
     const user = await User.findOne({ phone, isActive: { $ne: false } });
     if (!user) {

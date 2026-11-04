@@ -48,7 +48,7 @@ class _AttendanceCalendarScreenState extends State<AttendanceCalendarScreen> {
       final records = data['records'] as List? ?? [];
       final map = <DateTime, String>{};
       for (var record in records) {
-        final date = DateTime.tryParse(record['date'] ?? '');
+        final date = DateTime.tryParse(record['date'] ?? '')?.toLocal();
         if (date != null) {
           final normalizedDate = DateTime(date.year, date.month, date.day);
           map[normalizedDate] = record['status'] ?? 'absent';

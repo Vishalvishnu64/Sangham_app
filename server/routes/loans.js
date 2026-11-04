@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const express = require('express');
 const Loan = require('../models/Loan');
 const Transaction = require('../models/Transaction');
@@ -18,13 +19,13 @@ router.post('/', auth, adminOnly, async (req, res) => {
   try {
     const { userId, amount, note } = req.body;
 
-    if (!userId || !amount || amount <= 0) {
+    if (!mongoose.isObjectIdOrHexString(userId) || !Number.isSafeInteger(amount) || amount <= 0) {
       return res.status(400).json({ message: 'Valid userId and amount are required' });
     }
 
     // Verify user exists
     const user = await User.findById(userId);
-    if (!user) {
+    if (!user || !user.isActive || user.role !== 'user') {
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -44,7 +45,8 @@ router.post('/', auth, adminOnly, async (req, res) => {
       issuedDate: new Date(),
       createdBy: req.user._id
     });
-    await loan.save();
+    await mongoose.connection.transaction(async session => {
+    await loan.save({ session });
 
     // Also create a transaction record for the loan
     const transaction = new Transaction({
@@ -55,7 +57,8 @@ router.post('/', auth, adminOnly, async (req, res) => {
       date: new Date(),
       createdBy: req.user._id
     });
-    await transaction.save();
+    await transaction.save({ session });
+    });
 
     const populated = await Loan.findById(loan._id)
       .populate('userId', 'name phone')
@@ -171,116 +174,34 @@ router.get('/user/:userId', auth, async (req, res) => {
 });
 
 // POST /api/loans/:id/repay - Record a repayment (principal or interest, separately)
-router.post('/:id/repay', auth, async (req, res) => {
+router.post('/:id/repay', auth, adminOnly, async (req, res) => {
+  const { amount, paymentType = 'principal' } = req.body;
+  if (!mongoose.isObjectIdOrHexString(req.params.id) || !Number.isSafeInteger(amount) || amount <= 0 ||
+      !['principal', 'interest', 'both'].includes(paymentType)) {
+    return res.status(400).json({ message: 'Valid loan, whole-rupee amount and payment type required' });
+  }
   try {
-    const { amount, paymentType = 'principal' } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ message: 'Valid repayment amount is required' });
-    }
-
-    if (!['principal', 'interest', 'both'].includes(paymentType)) {
-      return res.status(400).json({ message: 'paymentType must be principal, interest, or both' });
-    }
-
-    const loan = await Loan.findById(req.params.id);
-    if (!loan) {
-      return res.status(404).json({ message: 'Loan not found' });
-    }
-
-    // Check permission: users can only repay their own loans, admins can repay any loan
-    if (req.user.role !== 'admin' && req.user._id.toString() !== loan.userId.toString()) {
-      return res.status(403).json({ message: 'You can only repay your own loans' });
-    }
-
-    if (loan.status === 'repaid') {
-      return res.status(400).json({ message: 'Loan is already fully repaid' });
-    }
-
-    // Validate amount based on payment type
-    if (paymentType === 'principal' && amount > loan.remainingPrincipal) {
-      return res.status(400).json({
-        message: `Amount (₹${amount}) exceeds remaining principal (₹${loan.remainingPrincipal})`,
-        remainingPrincipal: loan.remainingPrincipal
-      });
-    }
-    if (paymentType === 'interest' && amount > loan.currentMonthInterest) {
-      return res.status(400).json({
-        message: `Amount (₹${amount}) exceeds interest due (₹${loan.currentMonthInterest})`,
-        interestDue: loan.currentMonthInterest
-      });
-    }
-    if (paymentType === 'both') {
-      const totalDue = loan.remainingPrincipal + loan.currentMonthInterest;
-      if (amount > totalDue) {
-        return res.status(400).json({
-          message: `Amount (₹${amount}) exceeds total due (₹${totalDue})`,
-          remainingPrincipal: loan.remainingPrincipal,
-          interestDue: loan.currentMonthInterest
-        });
+    const result = await mongoose.connection.transaction(async session => {
+      const loan = await Loan.findById(req.params.id).session(session);
+      if (!loan) throw Object.assign(new Error('Loan not found'), { status: 404 });
+      const due = paymentType === 'principal' ? loan.remainingPrincipal : paymentType === 'interest'
+        ? loan.currentMonthInterest : loan.remainingPrincipal + loan.currentMonthInterest;
+      if (loan.status === 'repaid' || amount > due) {
+        throw Object.assign(new Error('Amount exceeds outstanding debt'), { status: 400 });
       }
-    }
-
-    // Process the repayment - principal and interest handled separately
-    const { loan: updatedLoan, repaymentSummary } = processRepayment(loan, amount, paymentType);
-
-    // Persist the LOAN first (the authoritative debt record), then the
-    // transaction. If the transaction insert fails we roll the loan back so
-    // money records never disagree with the ledger.
-    const snapshot = {
-      remainingPrincipal: updatedLoan.remainingPrincipal,
-      currentMonthInterest: updatedLoan.currentMonthInterest,
-      totalInterestPaid: updatedLoan.totalInterestPaid,
-      outstandingBalance: updatedLoan.outstandingBalance,
-      status: updatedLoan.status,
-      repaidDate: updatedLoan.repaidDate,
-      interestCalculatedDate: updatedLoan.interestCalculatedDate,
-      repayments: updatedLoan.repayments ? [...updatedLoan.repayments] : []
-    };
-
-    await updatedLoan.save();
-
-    let transaction;
-    try {
-      const txType = paymentType === 'interest' ? 'loan_interest_payment' : 'loan_repayment';
-      transaction = new Transaction({
-        userId: loan.userId,
-        amount: amount,
-        type: txType,
-        note: `Loan repayment - Principal: ₹${repaymentSummary.principalPaid}, Interest: ₹${repaymentSummary.interestPaid}`,
-        date: new Date(),
-        createdBy: req.user._id
-      });
-      await transaction.save();
-    } catch (txError) {
-      // Roll back the loan so the recorded debt stays consistent.
-      Object.assign(updatedLoan, {
-        remainingPrincipal: snapshot.remainingPrincipal,
-        currentMonthInterest: snapshot.currentMonthInterest,
-        totalInterestPaid: snapshot.totalInterestPaid,
-        outstandingBalance: snapshot.outstandingBalance,
-        status: snapshot.status,
-        repaidDate: snapshot.repaidDate,
-        interestCalculatedDate: snapshot.interestCalculatedDate,
-        repayments: snapshot.repayments
-      });
-      try { await updatedLoan.save(); } catch (_) { /* best effort */ }
-      throw txError;
-    }
-
-    const populated = await Loan.findById(updatedLoan._id)
-      .populate('userId', 'name phone')
-      .populate('createdBy', 'name');
-
-    res.json({
-      message: updatedLoan.status === 'repaid'
-        ? 'Loan fully repaid!'
-        : `Repayment recorded successfully`,
-      loan: populated,
-      repaymentSummary
+      const { repaymentSummary } = processRepayment(loan, amount, paymentType);
+      await loan.save({ session });
+      await Transaction.create([{
+        userId: loan.userId, loanId: loan._id, amount,
+        type: paymentType === 'interest' ? 'loan_interest_payment' : 'loan_repayment',
+        principalPaid: repaymentSummary.principalPaid, interestPaid: repaymentSummary.interestPaid,
+        note: 'Cash repayment confirmed by administrator', date: new Date(), createdBy: req.user._id
+      }], { session });
+      return { loan, repaymentSummary };
     });
+    res.json({ message: 'Cash repayment recorded', ...result });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(error.status || 500).json({ message: error.status ? error.message : 'Repayment could not be recorded' });
   }
 });
 

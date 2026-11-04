@@ -117,7 +117,7 @@ class _MembersScreenState extends State<MembersScreen> {
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  'Leave empty to use the last 4 digits of the phone number.',
+                  'Use a passphrase of at least 15 characters.',
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
               ),
@@ -145,9 +145,7 @@ class _MembersScreenState extends State<MembersScreen> {
                             await ApiService.addMember(
                               name,
                               phone,
-                              passwordCtrl.text.trim().isEmpty
-                                  ? phone.substring(phone.length - 4)
-                                  : passwordCtrl.text.trim(),
+                              passwordCtrl.text,
                             );
                             if (!ctx.mounted) return;
                             Navigator.pop(ctx);

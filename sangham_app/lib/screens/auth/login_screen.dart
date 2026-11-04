@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../admin/admin_shell.dart';
 import '../user/user_shell.dart';
-import 'signup_screen.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -56,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen>
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final success = await auth.login(
       _phoneController.text.trim(),
-      _passwordController.text.trim(),
+      _passwordController.text,
     );
 
     if (!mounted) return;
@@ -195,6 +195,7 @@ class _LoginScreenState extends State<LoginScreen>
                             prefixIcon: const Icon(Icons.lock,
                                 color: Color(0xFF1A5C3A)),
                             suffixIcon: IconButton(
+                              tooltip: _obscurePassword ? 'Show password' : 'Hide password',
                               icon: Icon(
                                 _obscurePassword
                                     ? Icons.visibility_off
@@ -264,15 +265,9 @@ class _LoginScreenState extends State<LoginScreen>
                         const SizedBox(height: 20),
                         Center(
                           child: TextButton(
-                            onPressed: () {
-                              Navigator.of(context).pushReplacement(
-                                MaterialPageRoute(
-                                  builder: (_) => const SignupScreen(),
-                                ),
-                              );
-                            },
+                            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact your Sangham administrator to set up your account.'))),
                             child: const Text(
-                              "Don't have an account? Sign Up",
+                              "Need an account? Contact administrator",
                               style: TextStyle(
                                 color: Color(0xFF1A5C3A),
                                 fontWeight: FontWeight.w600,

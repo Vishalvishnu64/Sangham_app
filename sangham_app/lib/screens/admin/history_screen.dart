@@ -25,6 +25,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() => _isLoading = true);
     try {
       final transactions = await ApiService.getAllTransactions();
+      if (!mounted) return;
       setState(() {
         _transactions = transactions;
         _isLoading = false;

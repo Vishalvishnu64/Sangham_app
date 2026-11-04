@@ -1,0 +1,105 @@
+[
+  {
+    "name": "borrower can clear debt without money movement",
+    "evidence": {
+      "status": 200,
+      "principal": 0,
+      "interest": 0,
+      "loanStatus": "repaid"
+    }
+  },
+  {
+    "name": "member receives other persons phone and attendance",
+    "evidence": {
+      "status": 200,
+      "otherPersonExposed": true
+    }
+  },
+  {
+    "name": "unverified outsider immediately admitted",
+    "evidence": {
+      "registration": 201,
+      "groupSummary": 200
+    }
+  },
+  {
+    "name": "predictable member password accepted",
+    "evidence": {
+      "created": 201,
+      "login": 200
+    }
+  },
+  {
+    "name": "login accepts query operator instead of phone (password still required)",
+    "evidence": {
+      "status": 200,
+      "role": "admin"
+    }
+  },
+  {
+    "name": "rollback retains mutated principal after failed ledger write",
+    "evidence": {
+      "http": 500,
+      "expectedPrincipal": 1000,
+      "actualPrincipal": 900,
+      "repayments": 1
+    }
+  },
+  {
+    "name": "issuance leaves orphan debt on ledger failure",
+    "evidence": {
+      "http": 500,
+      "extraLoans": 1
+    }
+  },
+  {
+    "name": "negative contribution and loan-less repayment accepted",
+    "evidence": {
+      "negative": 201,
+      "nonexistentMember": 201
+    }
+  },
+  {
+    "name": "attendance enum bypassed by bulk update",
+    "evidence": {
+      "http": 200,
+      "persisted": true
+    }
+  },
+  {
+    "name": "principal payment resurrects already-paid interest",
+    "evidence": {
+      "interestExpected": 0,
+      "interestActual": 99
+    }
+  },
+  {
+    "name": "monthly accrual overwrites unpaid interest",
+    "evidence": {
+      "twoMonthsAt100": 100
+    }
+  },
+  {
+    "name": "concurrent repayment reconciliation",
+    "evidence": {
+      "successes": 8,
+      "errors": [],
+      "expectedPrincipal": 9200,
+      "actualPrincipal": 9600,
+      "repaymentRows": 8
+    }
+  },
+  {
+    "name": "duplicate bulk member IDs duplicate money",
+    "evidence": {
+      "created": 2
+    }
+  },
+  {
+    "name": "loan ledger can be deleted independently",
+    "evidence": {
+      "deleteStatus": 200,
+      "loanStillExists": true
+    }
+  }
+]

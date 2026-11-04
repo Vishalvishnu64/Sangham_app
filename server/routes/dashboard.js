@@ -103,9 +103,12 @@ router.get('/user/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Calculate balance from transactions
+    // Calculate balance from transactions.
+    // Personal (savings) balance = contributions only. Loans are paid out of
+    // the whole group fund, so loan/penalty/withdrawal entries must not move
+    // a member's own balance.
     const balanceResult = await Transaction.aggregate([
-      { $match: { userId: user._id } },
+      { $match: { userId: user._id, type: 'contribution' } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
     const balance = balanceResult[0]?.total || 0;

@@ -17,7 +17,7 @@ const allowedOrigins = (process.env.CORS_ORIGIN || '')
 app.use(cors({
   origin: (origin, callback) => {
     if (
-      allowedOrigins.length === 0 ||
+      (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production') ||
       !origin ||
       allowedOrigins.includes(origin)
     ) {
@@ -26,7 +26,7 @@ app.use(cors({
     return callback(new Error('Not allowed by CORS'));
   },
 }));
-app.use(express.json());
+app.use(express.json({ limit: '32kb', inflate: false }));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));

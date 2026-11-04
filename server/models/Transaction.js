@@ -6,6 +6,9 @@ const transactionSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  loanId: { type: mongoose.Schema.Types.ObjectId, ref: 'Loan' },
+  principalPaid: Number,
+  interestPaid: Number,
   amount: {
     type: Number,
     required: [true, 'Amount is required']

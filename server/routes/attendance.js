@@ -9,6 +9,9 @@ const router = express.Router();
 router.post('/bulk', auth, adminOnly, async (req, res) => {
   try {
     const { records, date } = req.body;
+    if (!Array.isArray(records) || records.length === 0 || records.length > 500 || records.some(r => !r || typeof r.userId !== 'string' || !/^[a-f0-9]{24}$/i.test(r.userId) || !['present','absent'].includes(r.status)) || (date && !Number.isFinite(Date.parse(date)))) {
+      return res.status(400).json({ message: 'Valid attendance records and date required' });
+    }
     // records: [{ userId, status }]
     const attendanceDate = date ? new Date(date) : new Date();
     attendanceDate.setHours(0, 0, 0, 0);
@@ -38,7 +41,7 @@ router.post('/bulk', auth, adminOnly, async (req, res) => {
 });
 
 // GET /api/attendance/today - Today's attendance summary
-router.get('/today', auth, async (req, res) => {
+router.get('/today', auth, adminOnly, async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);

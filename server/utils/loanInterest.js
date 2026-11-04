@@ -93,18 +93,14 @@ function processRepayment(loan, amountPaid, paymentType = 'principal') {
   // Update cumulative interest paid
   loan.totalInterestPaid += interestPaid;
 
-  // Check if loan is fully repaid
-  if (loan.remainingPrincipal <= 0) {
-    loan.remainingPrincipal = 0;
-    loan.currentMonthInterest = 0;
+  // Assessed interest remains owed until explicitly paid or waived.
+  if (loan.remainingPrincipal === 0 && loan.currentMonthInterest === 0) {
     loan.status = 'repaid';
     loan.repaidDate = new Date();
-  } else if (principalPaid > 0) {
-    // ONLY recalculate interest for next month if principal was paid
-    // If only interest was paid, the principal didn't change, so next month's interest stays the same
-    loan.currentMonthInterest = calculateMonthlyInterest(loan.remainingPrincipal);
+  } else {
+    loan.status = 'active';
+    loan.repaidDate = null;
   }
-  // If paymentType is 'interest', don't recalculate - principal unchanged = same interest next month
 
   // Outstanding balance = remaining principal only (interest is separate)
   loan.outstandingBalance = loan.remainingPrincipal;
@@ -181,7 +177,7 @@ function getLoanDetails(loan) {
     outstandingBalance: loan.remainingPrincipal, // principal only
     status: loan.status,
     issuedDate: loan.issuedDate,
-    interestRate: `${(loan.interestRate || 0.01) * 100}% per month`,
+    interestRate: loan.interestRate ?? 0.01,
     interestCalculatedDate: loan.interestCalculatedDate,
     repayments: loan.repayments || [],
     repaidDate: loan.repaidDate,
